@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 @MainActor
@@ -5,12 +6,19 @@ import Observation
 final class AppModel {
     let appTitle = "Co-Reader"
     private let providerDiscovery: AIProviderDiscovery
+    private var documentLibrary = DocumentLibrary()
     private(set) var hasLoadedProviders = false
     var isDiscoveringProviders = false
+    var isImportingDocument = false
     var providerStatuses: [AIProviderStatus] = []
+    var selectedDocument: ReaderDocument?
 
     init(providerDiscovery: AIProviderDiscovery = .live()) {
         self.providerDiscovery = providerDiscovery
+    }
+
+    var importedDocuments: [ReaderDocument] {
+        documentLibrary.documents
     }
 
     var statusHeadline: String {
@@ -47,6 +55,19 @@ final class AppModel {
         }
 
         await refreshProviders()
+    }
+
+    func beginDocumentImport() {
+        isImportingDocument = true
+    }
+
+    func importDocument(from url: URL) {
+        let document = documentLibrary.importDocument(at: url)
+        selectedDocument = document
+    }
+
+    func selectDocument(_ document: ReaderDocument) {
+        selectedDocument = document
     }
 
     func refreshProviders() async {
