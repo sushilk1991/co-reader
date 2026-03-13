@@ -10,16 +10,17 @@ struct ImportedDocumentRow: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: document.kind == .pdf ? "doc.richtext" : "books.vertical")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isSelected ? ReaderTheme.teal : ReaderTheme.slate)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(document.title)
                         .font(.headline)
+                        .foregroundStyle(ReaderTheme.ink)
                         .multilineTextAlignment(.leading)
 
                     Text(document.kind.displayName)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ReaderTheme.slate)
                 }
 
                 Spacer()
@@ -33,9 +34,9 @@ struct ImportedDocumentRow: View {
 
     private var backgroundStyle: some ShapeStyle {
         if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.15))
+            return AnyShapeStyle(ReaderTheme.teal.opacity(0.12))
         }
 
-        return AnyShapeStyle(.quaternary.opacity(0.18))
+        return AnyShapeStyle(Color.white.opacity(0.7))
     }
 }

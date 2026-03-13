@@ -3,6 +3,7 @@
 agents/
 build
 DerivedData
+dist
 *.xcuserstate
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/

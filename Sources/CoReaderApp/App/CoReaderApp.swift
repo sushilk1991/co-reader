@@ -7,9 +7,8 @@ struct CoReaderApp: App {
     var body: some Scene {
         WindowGroup {
             ProviderStatusView(appModel: appModel)
-                .frame(minWidth: 860, minHeight: 560)
+                .frame(minWidth: 1120, minHeight: 760)
         }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 980, height: 640)
+        .defaultSize(width: 1320, height: 860)
     }
 }

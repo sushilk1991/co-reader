@@ -2,11 +2,26 @@ import Foundation
 import PDFKit
 
 struct LiveDocumentContextExtractor: DocumentContextExtracting {
-    func extractContext(for document: ReaderDocument) throws -> DocumentContext {
+    private let composer = DocumentContextComposer()
+
+    func extractContext(
+        for document: ReaderDocument,
+        question: String,
+        selection: DocumentSelection?,
+        currentPageIndex: Int?,
+        visiblePageIndexes: [Int]
+    ) throws -> DocumentContext {
         switch document.kind {
         case .pdf:
-            let excerpt = try extractPDFExcerpt(from: document.fileURL)
-            return DocumentContext(title: document.title, excerpt: excerpt)
+            let pageTexts = try extractPDFPageTexts(from: document.fileURL)
+            return composer.compose(
+                title: document.title,
+                question: question,
+                selection: selection,
+                currentPageIndex: currentPageIndex,
+                visiblePageIndexes: visiblePageIndexes,
+                pageTexts: pageTexts
+            )
         case .epub:
             return DocumentContext(
                 title: document.title,
@@ -20,7 +35,7 @@ struct LiveDocumentContextExtractor: DocumentContextExtracting {
         }
     }
 
-    private func extractPDFExcerpt(from url: URL) throws -> String {
+    private func extractPDFPageTexts(from url: URL) throws -> [String] {
         guard let pdfDocument = PDFDocument(url: url) else {
             throw NSError(
                 domain: "CoReader.DocumentContext",
@@ -29,16 +44,16 @@ struct LiveDocumentContextExtractor: DocumentContextExtracting {
             )
         }
 
-        let rawText = pdfDocument.string?
-            .replacingOccurrences(of: "\u{0}", with: " ")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        let excerpt = String(rawText.prefix(8_000))
-        if excerpt.isEmpty {
-            return "The PDF opened successfully, but no extractable text was found. Ask questions about visible diagrams or highlighted selections instead."
+        let pageTexts = (0 ..< pdfDocument.pageCount).map { pageIndex in
+            pdfDocument.page(at: pageIndex)?.string ?? ""
         }
 
-        return excerpt
+        if pageTexts.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return [
+                "The PDF opened successfully, but no extractable text was found. Ask questions about visible diagrams or highlighted selections instead."
+            ]
+        }
+
+        return pageTexts
     }
 }

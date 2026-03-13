@@ -8,6 +8,7 @@ struct ProviderStatusCard: View {
             HStack {
                 Text(provider.kind.displayName)
                     .font(.headline)
+                    .foregroundStyle(ReaderTheme.ink)
 
                 Spacer()
 
@@ -16,11 +17,11 @@ struct ProviderStatusCard: View {
                     systemImage: provider.isAvailable ? "checkmark.circle.fill" : "xmark.circle.fill"
                 )
                 .labelStyle(.titleAndIcon)
-                .foregroundStyle(provider.isAvailable ? .green : .red)
+                .foregroundStyle(provider.isAvailable ? ReaderTheme.teal : ReaderTheme.rose)
             }
 
             Text(provider.detail)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ReaderTheme.slate)
 
             if !provider.models.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -28,9 +29,10 @@ struct ProviderStatusCard: View {
                         ForEach(provider.models, id: \.self) { model in
                             Text(model)
                                 .font(.caption.weight(.medium))
+                                .foregroundStyle(ReaderTheme.ink)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(.tertiary.opacity(0.5), in: Capsule())
+                                .background(ReaderTheme.canvas.opacity(0.85), in: Capsule())
                         }
                     }
                 }
@@ -38,6 +40,6 @@ struct ProviderStatusCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.22), in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 18))
     }
 }

@@ -63,7 +63,10 @@ private struct StubDocumentAssistant: DocumentAssisting {
     func answer(
         question: String,
         for document: ReaderDocument,
-        providerStatuses: [AIProviderStatus]
+        providerStatuses: [AIProviderStatus],
+        selection: DocumentSelection?,
+        currentPageIndex: Int?,
+        visiblePageIndexes: [Int]
     ) async throws -> String {
         result
     }

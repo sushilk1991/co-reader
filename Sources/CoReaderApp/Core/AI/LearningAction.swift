@@ -9,13 +9,13 @@ enum LearningAction: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .summarize:
-            "Summarize"
+            "Summarize Focus"
         case .extractCode:
-            "Generate Code"
+            "Generate Example"
         case .explainVisuals:
             "Explain Diagram"
         case .quizMe:
-            "Quiz Me"
+            "Quiz This Section"
         }
     }
 
@@ -35,13 +35,13 @@ enum LearningAction: String, CaseIterable, Identifiable, Sendable {
     func prompt(for document: ReaderDocument) -> String {
         switch self {
         case .summarize:
-            "Summarize the most important ideas in \(document.title) in a compact study-guide format."
+            "Summarize the current reading focus in \(document.title) as a compact study-guide grounded only in the provided section context."
         case .extractCode:
-            "Generate a code example based on the key ideas in \(document.title), and explain how it connects to the document."
+            "Generate a practical code example from the current focus area in \(document.title), and explain how it connects to the text."
         case .explainVisuals:
-            "If this document contains a diagram, chart, or visual workflow, explain the most important visual in \(document.title) clearly and step by step."
+            "If the current section of \(document.title) contains a diagram, chart, or workflow, explain it clearly and step by step."
         case .quizMe:
-            "Create a short quiz from \(document.title) with answers hidden until the end."
+            "Create a short quiz from the current section of \(document.title) with answers hidden until the end."
         }
     }
 }

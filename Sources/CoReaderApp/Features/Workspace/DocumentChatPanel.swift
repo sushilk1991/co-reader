@@ -7,12 +7,13 @@ struct DocumentChatPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Ask the Document")
+                Text("Ask the Reader")
                     .font(.title3.weight(.semibold))
+                    .foregroundStyle(ReaderTheme.ink)
 
-                Text("Use local models to interrogate the current document, extract code, or clarify dense sections.")
+                Text("Use the current selection or visible pages, not the whole book blob.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ReaderTheme.slate)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -24,15 +25,16 @@ struct DocumentChatPanel: View {
                             }
                         }
                         .buttonStyle(.bordered)
+                        .tint(ReaderTheme.teal)
                     }
                 }
             }
 
             if appModel.chatTranscript.isEmpty {
                 ContentUnavailableView(
-                    "No questions yet",
+                    "No AI thread yet",
                     systemImage: "text.bubble",
-                    description: Text("Select a document and ask a focused question to start building context.")
+                    description: Text("Select text or stay on the current page, then ask a grounded question.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -48,10 +50,10 @@ struct DocumentChatPanel: View {
             if let chatError = appModel.chatError {
                 Text(chatError)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(ReaderTheme.rose)
             }
 
-            TextField("Ask about the current document", text: $appModel.chatInput, axis: .vertical)
+            TextField("Ask about the current selection or visible section", text: $appModel.chatInput, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...)
 
@@ -61,11 +63,9 @@ struct DocumentChatPanel: View {
                 }
             }
             .buttonStyle(.borderedProminent)
+            .tint(ReaderTheme.teal)
             .disabled(!appModel.canSubmitQuestion)
         }
-        .padding(20)
-        .frame(width: 360)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(.quaternary.opacity(0.16), in: RoundedRectangle(cornerRadius: 22))
     }
 }

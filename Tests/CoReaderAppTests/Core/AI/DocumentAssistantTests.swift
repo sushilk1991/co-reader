@@ -63,13 +63,88 @@ struct DocumentAssistantTests {
         #expect(await claudeGenerator.lastPrompt?.contains("Pinning keeps futures") == true)
         #expect(await ollamaGenerator.callCount == 0)
     }
+
+    @Test
+    func answerPassesSelectionAndReadingPositionToExtractor() async throws {
+        let extractor = RecordingDocumentContextExtractor(
+            result: DocumentContext(
+                title: "Transformers",
+                excerpt: "Selection Focus:\nmulti-head attention\n\n[Page 13]\nMore details."
+            )
+        )
+        let assistant = DocumentAssistant(
+            extractor: extractor,
+            ollamaGenerator: StubOllamaGenerator(result: "Ollama answer"),
+            claudeGenerator: StubClaudeGenerator(result: "Claude answer")
+        )
+        let selection = DocumentSelection(
+            text: "multi-head attention",
+            pageIndex: 12,
+            surroundingText: "This page describes why attention scales better than recurrence."
+        )
+
+        _ = try await assistant.answer(
+            question: "Summarize this section",
+            for: ReaderDocument(fileURL: URL(fileURLWithPath: "/tmp/Transformers.pdf")),
+            providerStatuses: [
+                AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+            ],
+            selection: selection,
+            currentPageIndex: 12,
+            visiblePageIndexes: [12, 13]
+        )
+
+        let recordedCall = extractor.lastCall
+        #expect(recordedCall?.question == "Summarize this section")
+        #expect(recordedCall?.selection == selection)
+        #expect(recordedCall?.currentPageIndex == 12)
+        #expect(recordedCall?.visiblePageIndexes == [12, 13])
+    }
 }
 
 private struct StubDocumentContextExtractor: DocumentContextExtracting {
     let result: DocumentContext
 
-    func extractContext(for document: ReaderDocument) throws -> DocumentContext {
+    func extractContext(
+        for document: ReaderDocument,
+        question: String,
+        selection: DocumentSelection?,
+        currentPageIndex: Int?,
+        visiblePageIndexes: [Int]
+    ) throws -> DocumentContext {
         result
+    }
+}
+
+private final class RecordingDocumentContextExtractor: @unchecked Sendable, DocumentContextExtracting {
+    struct Call: Equatable {
+        let question: String
+        let selection: DocumentSelection?
+        let currentPageIndex: Int?
+        let visiblePageIndexes: [Int]
+    }
+
+    private(set) var lastCall: Call?
+    let result: DocumentContext
+
+    init(result: DocumentContext) {
+        self.result = result
+    }
+
+    func extractContext(
+        for document: ReaderDocument,
+        question: String,
+        selection: DocumentSelection?,
+        currentPageIndex: Int?,
+        visiblePageIndexes: [Int]
+    ) throws -> DocumentContext {
+        lastCall = Call(
+            question: question,
+            selection: selection,
+            currentPageIndex: currentPageIndex,
+            visiblePageIndexes: visiblePageIndexes
+        )
+        return result
     }
 }
 

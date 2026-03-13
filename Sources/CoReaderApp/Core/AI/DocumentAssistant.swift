@@ -16,9 +16,18 @@ struct DocumentAssistant: DocumentAssisting {
     func answer(
         question: String,
         for document: ReaderDocument,
-        providerStatuses: [AIProviderStatus]
+        providerStatuses: [AIProviderStatus],
+        selection: DocumentSelection? = nil,
+        currentPageIndex: Int? = nil,
+        visiblePageIndexes: [Int] = []
     ) async throws -> String {
-        let context = try extractor.extractContext(for: document)
+        let context = try extractor.extractContext(
+            for: document,
+            question: question,
+            selection: selection,
+            currentPageIndex: currentPageIndex,
+            visiblePageIndexes: visiblePageIndexes
+        )
         let prompt = buildPrompt(question: question, context: context)
 
         switch preferredExecutionTarget(from: providerStatuses) {
