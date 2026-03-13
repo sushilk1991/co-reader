@@ -7,11 +7,13 @@ final class AppModel {
     let appTitle = "Co-Reader"
     private let providerDiscovery: AIProviderDiscovery
     private let documentAssistant: DocumentAssisting
+    private let knowledgeCapture: KnowledgeCapturing
     private var documentLibrary = DocumentLibrary()
     private(set) var hasLoadedProviders = false
     var isDiscoveringProviders = false
     var isImportingDocument = false
     var isAskingQuestion = false
+    var capturedNoteCount = 0
     var providerStatuses: [AIProviderStatus] = []
     var selectedDocument: ReaderDocument?
     var chatInput = ""
@@ -20,10 +22,12 @@ final class AppModel {
 
     init(
         providerDiscovery: AIProviderDiscovery = .live(),
-        documentAssistant: DocumentAssisting = DocumentAssistant()
+        documentAssistant: DocumentAssisting = DocumentAssistant(),
+        knowledgeCapture: KnowledgeCapturing = AppModel.defaultKnowledgeCapture()
     ) {
         self.providerDiscovery = providerDiscovery
         self.documentAssistant = documentAssistant
+        self.knowledgeCapture = knowledgeCapture
     }
 
     var importedDocuments: [ReaderDocument] {
@@ -109,6 +113,13 @@ final class AppModel {
                 providerStatuses: providerStatuses
             )
             chatTranscript.append(ChatMessage(role: .assistant, content: answer))
+
+            do {
+                try knowledgeCapture.capture(question: question, answer: answer, for: document)
+                capturedNoteCount += 1
+            } catch {
+                chatError = "Answer generated, but note capture failed: \(error.localizedDescription)"
+            }
         } catch {
             chatError = error.localizedDescription
             chatTranscript.append(ChatMessage(role: .assistant, content: error.localizedDescription))
@@ -133,5 +144,13 @@ final class AppModel {
         }
 
         hasLoadedProviders = true
+    }
+
+    private static func defaultKnowledgeCapture() -> KnowledgeCapturing {
+        guard let repository = try? KnowledgeRepository.liveDefault() else {
+            return NoOpKnowledgeCapture()
+        }
+
+        return ChatKnowledgeCapture(repository: repository)
     }
 }

@@ -55,6 +55,14 @@ struct WorkspaceSidebarView: View {
                         }
                     }
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Brain")
+                        .font(.headline)
+
+                    Label("\(appModel.capturedNoteCount) captured notes", systemImage: "brain.head.profile")
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
