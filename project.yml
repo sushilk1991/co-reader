@@ -1,0 +1,59 @@
+name: CoReader
+options:
+  createIntermediateGroups: true
+  developmentLanguage: en
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+
+targets:
+  CoReaderApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/CoReaderApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sushil.CoReaderApp
+        PRODUCT_NAME: CoReader
+        PRODUCT_MODULE_NAME: CoReaderApp
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: CoReader
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+    dependencies:
+      - sdk: PDFKit.framework
+      - sdk: libsqlite3.tbd
+
+  CoReaderAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Tests/CoReaderAppTests
+    dependencies:
+      - target: CoReaderApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sushil.CoReaderAppTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/CoReader.app/Contents/MacOS/CoReader"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  CoReaderApp:
+    build:
+      targets:
+        CoReaderApp: all
+        CoReaderAppTests: [test]
+    test:
+      gatherCoverageData: false
+      targets:
+        - name: CoReaderAppTests
