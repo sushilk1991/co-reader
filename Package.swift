@@ -15,7 +15,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "CoReaderApp",
-            path: "Sources/CoReaderApp"
+            path: "Sources/CoReaderApp",
+            linkerSettings: [
+                .linkedLibrary("sqlite3")
+            ]
         ),
         .testTarget(
             name: "CoReaderAppTests",

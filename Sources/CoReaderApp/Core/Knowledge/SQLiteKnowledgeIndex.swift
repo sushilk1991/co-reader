@@ -1,0 +1,170 @@
+import Foundation
+import SQLite3
+
+final class SQLiteKnowledgeIndex {
+    private let databaseURL: URL
+    private var database: OpaquePointer?
+
+    init(databaseURL: URL) throws {
+        self.databaseURL = databaseURL
+        try openDatabase()
+        try migrate()
+    }
+
+    deinit {
+        sqlite3_close(database)
+    }
+
+    func upsert(note: KnowledgeNote, fileURL: URL) throws {
+        let sql = """
+        INSERT INTO notes (
+            id,
+            title,
+            source_identifier,
+            created_at,
+            file_path,
+            excerpt,
+            search_blob
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            source_identifier = excluded.source_identifier,
+            created_at = excluded.created_at,
+            file_path = excluded.file_path,
+            excerpt = excluded.excerpt,
+            search_blob = excluded.search_blob;
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw error(message: "Failed to prepare knowledge upsert.")
+        }
+        defer { sqlite3_finalize(statement) }
+
+        try bind(note.id.uuidString.lowercased(), at: 1, to: statement)
+        try bind(note.title, at: 2, to: statement)
+        try bind(note.sourceIdentifier, at: 3, to: statement)
+        sqlite3_bind_double(statement, 4, note.createdAt.timeIntervalSince1970)
+        try bind(fileURL.path, at: 5, to: statement)
+        try bind(note.highlightExcerpt, at: 6, to: statement)
+        try bind(searchBlob(for: note), at: 7, to: statement)
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw error(message: "Failed to execute knowledge upsert.")
+        }
+    }
+
+    func search(matching query: String, limit: Int = 20) throws -> [KnowledgeNoteSummary] {
+        let sql = """
+        SELECT id, title, source_identifier, created_at, file_path, excerpt
+        FROM notes
+        WHERE lower(title) LIKE ? OR lower(search_blob) LIKE ?
+        ORDER BY created_at DESC
+        LIMIT ?;
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw error(message: "Failed to prepare knowledge search.")
+        }
+        defer { sqlite3_finalize(statement) }
+
+        let searchTerm = "%\(query.lowercased())%"
+        try bind(searchTerm, at: 1, to: statement)
+        try bind(searchTerm, at: 2, to: statement)
+        sqlite3_bind_int(statement, 3, Int32(limit))
+
+        var summaries: [KnowledgeNoteSummary] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let idText = text(at: 0, from: statement)
+            guard let id = UUID(uuidString: idText) else { continue }
+
+            summaries.append(
+                KnowledgeNoteSummary(
+                    id: id,
+                    title: text(at: 1, from: statement),
+                    sourceIdentifier: text(at: 2, from: statement),
+                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 3)),
+                    highlightExcerpt: optionalText(at: 5, from: statement),
+                    fileURL: URL(fileURLWithPath: text(at: 4, from: statement))
+                )
+            )
+        }
+
+        return summaries
+    }
+
+    private func openDatabase() throws {
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        guard sqlite3_open(databaseURL.path, &database) == SQLITE_OK else {
+            throw error(message: "Failed to open knowledge database.")
+        }
+    }
+
+    private func migrate() throws {
+        let sql = """
+        CREATE TABLE IF NOT EXISTS notes (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            source_identifier TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            file_path TEXT NOT NULL,
+            excerpt TEXT,
+            search_blob TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS notes_created_at_idx ON notes(created_at DESC);
+        """
+
+        guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+            throw error(message: "Failed to migrate knowledge database.")
+        }
+    }
+
+    private func searchBlob(for note: KnowledgeNote) -> String {
+        ([note.title, note.sourceIdentifier, note.highlightExcerpt] + note.bulletPoints)
+            .compactMap { $0 }
+            .joined(separator: "\n")
+            .lowercased()
+    }
+
+    private func bind(_ value: String?, at index: Int32, to statement: OpaquePointer?) throws {
+        if let value {
+            guard sqlite3_bind_text(statement, index, value, -1, sqliteTransient) == SQLITE_OK else {
+                throw error(message: "Failed to bind SQLite text value.")
+            }
+        } else {
+            guard sqlite3_bind_null(statement, index) == SQLITE_OK else {
+                throw error(message: "Failed to bind SQLite null value.")
+            }
+        }
+    }
+
+    private func text(at index: Int32, from statement: OpaquePointer?) -> String {
+        guard let value = sqlite3_column_text(statement, index) else {
+            return ""
+        }
+        return String(cString: value)
+    }
+
+    private func optionalText(at index: Int32, from statement: OpaquePointer?) -> String? {
+        guard sqlite3_column_type(statement, index) != SQLITE_NULL else {
+            return nil
+        }
+        return text(at: index, from: statement)
+    }
+
+    private func error(message: String) -> NSError {
+        let sqliteMessage = database.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) } ?? "unknown"
+        return NSError(
+            domain: "CoReader.SQLiteKnowledgeIndex",
+            code: Int(sqlite3_errcode(database)),
+            userInfo: [NSLocalizedDescriptionKey: "\(message) \(sqliteMessage)"]
+        )
+    }
+}
+
+private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
