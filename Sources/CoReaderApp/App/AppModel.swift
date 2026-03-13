@@ -10,6 +10,7 @@ final class AppModel {
     private let knowledgeCapture: KnowledgeCapturing
     private let noteStore: KnowledgeNoteStoring?
     private let visualExtractor: DocumentVisualExtracting
+    private let visualExporter: DocumentVisualExporting
     private var documentLibrary = DocumentLibrary()
     private(set) var hasLoadedProviders = false
     var isDiscoveringProviders = false
@@ -38,11 +39,13 @@ final class AppModel {
         documentAssistant: DocumentAssisting = DocumentAssistant(),
         knowledgeCapture: KnowledgeCapturing? = nil,
         noteStore: KnowledgeNoteStoring? = nil,
-        visualExtractor: DocumentVisualExtracting = LiveDocumentVisualExtractor()
+        visualExtractor: DocumentVisualExtracting = LiveDocumentVisualExtractor(),
+        visualExporter: DocumentVisualExporting = LiveDocumentVisualExporter()
     ) {
         self.providerDiscovery = providerDiscovery
         self.documentAssistant = documentAssistant
         self.visualExtractor = visualExtractor
+        self.visualExporter = visualExporter
         let systems = AppModel.defaultKnowledgeSystems()
         self.knowledgeCapture = knowledgeCapture ?? systems.capture
         self.noteStore = noteStore ?? systems.noteStore
@@ -174,6 +177,18 @@ final class AppModel {
         openInspector(tab: .visuals)
     }
 
+    func exportSelectedVisual() throws -> URL {
+        guard let document = selectedDocument else {
+            throw DocumentAssistantError.noSelectedDocument
+        }
+
+        guard let visual = activeVisualForActions() else {
+            throw ReaderWorkspaceError.noVisualContext
+        }
+
+        return try visualExporter.exportPNG(visual, for: document)
+    }
+
     func saveHighlightFromSelection() throws {
         let noteText = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         try saveHighlight(noteText: noteText.isEmpty ? nil : noteText)
@@ -265,33 +280,7 @@ final class AppModel {
             return
         }
 
-        chatError = nil
-        chatInput = ""
-        isAskingQuestion = true
-        chatTranscript.append(ChatMessage(role: .user, content: question))
-        defer { isAskingQuestion = false }
-
-        do {
-            let answer = try await documentAssistant.answer(
-                question: question,
-                for: document,
-                providerStatuses: providerStatuses,
-                selection: currentSelection,
-                currentPageIndex: currentPageIndex,
-                visiblePageIndexes: visiblePageIndexes
-            )
-            chatTranscript.append(ChatMessage(role: .assistant, content: answer))
-
-            do {
-                try knowledgeCapture.capture(question: question, answer: answer, for: document)
-                capturedNoteCount += 1
-            } catch {
-                chatError = "Answer generated, but note capture failed: \(error.localizedDescription)"
-            }
-        } catch {
-            chatError = error.localizedDescription
-            chatTranscript.append(ChatMessage(role: .assistant, content: error.localizedDescription))
-        }
+        await submitQuestion(question, for: document, visualAsset: nil)
     }
 
     func runQuickAction(_ action: LearningAction) async {
@@ -300,8 +289,20 @@ final class AppModel {
             return
         }
 
-        chatInput = action.prompt(for: document)
-        await askQuestion()
+        switch action {
+        case .explainVisuals:
+            do {
+                let visual = try resolveVisualForExplanation(in: document)
+                openInspector(tab: .ask)
+                await submitQuestion(action.prompt(for: document), for: document, visualAsset: visual)
+            } catch {
+                chatError = error.localizedDescription
+                chatTranscript.append(ChatMessage(role: .assistant, content: error.localizedDescription))
+            }
+        default:
+            chatInput = action.prompt(for: document)
+            await askQuestion()
+        }
     }
 
     func refreshProviders() async {
@@ -441,11 +442,70 @@ final class AppModel {
             .replacingOccurrences(of: ".pdf", with: "", options: .caseInsensitive)
             .replacingOccurrences(of: ".epub", with: "", options: .caseInsensitive)
     }
+
+    private func resolveVisualForExplanation(in document: ReaderDocument) throws -> DocumentVisualAsset {
+        if let visual = activeVisualForActions() {
+            return visual
+        }
+
+        if let currentPageIndex,
+           let snapshot = try visualExtractor.renderPageSnapshot(for: document, pageIndex: currentPageIndex) {
+            selectedVisual = snapshot
+            return snapshot
+        }
+
+        throw ReaderWorkspaceError.noVisualContext
+    }
+
+    private func activeVisualForActions() -> DocumentVisualAsset? {
+        if let selectedVisual {
+            return selectedVisual
+        }
+
+        if let fallbackVisual = documentVisuals.first {
+            selectedVisual = fallbackVisual
+            return fallbackVisual
+        }
+
+        return nil
+    }
+
+    private func submitQuestion(_ question: String, for document: ReaderDocument, visualAsset: DocumentVisualAsset?) async {
+        chatError = nil
+        chatInput = ""
+        isAskingQuestion = true
+        chatTranscript.append(ChatMessage(role: .user, content: question))
+        defer { isAskingQuestion = false }
+
+        do {
+            let answer = try await documentAssistant.answer(
+                question: question,
+                for: document,
+                providerStatuses: providerStatuses,
+                selection: currentSelection,
+                currentPageIndex: currentPageIndex,
+                visiblePageIndexes: visiblePageIndexes,
+                visualAsset: visualAsset
+            )
+            chatTranscript.append(ChatMessage(role: .assistant, content: answer))
+
+            do {
+                try knowledgeCapture.capture(question: question, answer: answer, for: document)
+                capturedNoteCount += 1
+            } catch {
+                chatError = "Answer generated, but note capture failed: \(error.localizedDescription)"
+            }
+        } catch {
+            chatError = error.localizedDescription
+            chatTranscript.append(ChatMessage(role: .assistant, content: error.localizedDescription))
+        }
+    }
 }
 
 enum ReaderWorkspaceError: LocalizedError {
     case noActiveSelection
     case emptyNote
+    case noVisualContext
 
     var errorDescription: String? {
         switch self {
@@ -453,6 +513,8 @@ enum ReaderWorkspaceError: LocalizedError {
             "Select text in the document first."
         case .emptyNote:
             "Write a note before saving it."
+        case .noVisualContext:
+            "No visual is selected, and the current page could not be turned into a diagram snapshot."
         }
     }
 }

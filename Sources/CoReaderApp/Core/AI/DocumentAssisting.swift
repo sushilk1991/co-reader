@@ -5,6 +5,7 @@ protocol DocumentAssisting: Sendable {
         providerStatuses: [AIProviderStatus],
         selection: DocumentSelection?,
         currentPageIndex: Int?,
-        visiblePageIndexes: [Int]
+        visiblePageIndexes: [Int],
+        visualAsset: DocumentVisualAsset?
     ) async throws -> String
 }

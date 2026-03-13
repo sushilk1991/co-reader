@@ -100,6 +100,120 @@ struct DocumentAssistantTests {
         #expect(recordedCall?.currentPageIndex == 12)
         #expect(recordedCall?.visiblePageIndexes == [12, 13])
     }
+
+    @Test
+    func answerUsesVisionCapableOllamaModelWhenVisualAssetIsProvided() async throws {
+        let visual = DocumentVisualAsset(
+            id: UUID(),
+            pageIndex: 8,
+            kind: .pageSnapshot,
+            imageData: Data([0xAA, 0xBB, 0xCC]),
+            pixelWidth: 1200,
+            pixelHeight: 900,
+            suggestedFilename: "transformers-page-9-visual.png"
+        )
+        let ollamaGenerator = StubOllamaGenerator(result: "Visual answer")
+        let assistant = DocumentAssistant(
+            extractor: StubDocumentContextExtractor(
+                result: DocumentContext(
+                    title: "Transformers",
+                    excerpt: "The current page describes an encoder-decoder workflow."
+                )
+            ),
+            ollamaGenerator: ollamaGenerator,
+            claudeGenerator: StubClaudeGenerator(result: "Claude answer")
+        )
+
+        let answer = try await assistant.answer(
+            question: "Explain this diagram.",
+            for: ReaderDocument(fileURL: URL(fileURLWithPath: "/tmp/Transformers.pdf")),
+            providerStatuses: [
+                AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2", "llava:latest"]),
+                AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "ready", models: [])
+            ],
+            visualAsset: visual
+        )
+
+        #expect(answer == "Visual answer")
+        #expect(await ollamaGenerator.lastModel == "llava:latest")
+        #expect(await ollamaGenerator.lastImageData == visual.imageData)
+        #expect(await ollamaGenerator.lastPrompt?.contains("Explain this diagram.") == true)
+    }
+
+    @Test
+    func answerFailsClearlyWhenVisualAssetIsProvidedWithoutVisionModel() async throws {
+        let visual = DocumentVisualAsset(
+            id: UUID(),
+            pageIndex: 3,
+            kind: .embeddedImage,
+            imageData: Data([0x10, 0x20, 0x30]),
+            pixelWidth: 640,
+            pixelHeight: 480,
+            suggestedFilename: "agents-page-4-figure.png"
+        )
+        let assistant = DocumentAssistant(
+            extractor: StubDocumentContextExtractor(
+                result: DocumentContext(
+                    title: "Agent Mesh",
+                    excerpt: "The current section includes a multi-agent coordination diagram."
+                )
+            ),
+            ollamaGenerator: StubOllamaGenerator(result: "unused"),
+            claudeGenerator: StubClaudeGenerator(result: "unused")
+        )
+
+        await #expect(throws: DocumentAssistantError.noVisionCapableProvider) {
+            try await assistant.answer(
+                question: "Explain this diagram.",
+                for: ReaderDocument(fileURL: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf")),
+                providerStatuses: [
+                    AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"]),
+                    AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "ready", models: [])
+                ],
+                selection: nil,
+                currentPageIndex: nil,
+                visiblePageIndexes: [],
+                visualAsset: visual
+            )
+        }
+    }
+
+    @Test
+    func answerFailsWithVisionSpecificErrorWhenOnlyClaudeIsAvailable() async throws {
+        let visual = DocumentVisualAsset(
+            id: UUID(),
+            pageIndex: 5,
+            kind: .pageSnapshot,
+            imageData: Data([0x01, 0x02, 0x03]),
+            pixelWidth: 1024,
+            pixelHeight: 768,
+            suggestedFilename: "distributed-systems-page-6-diagram.png"
+        )
+        let assistant = DocumentAssistant(
+            extractor: StubDocumentContextExtractor(
+                result: DocumentContext(
+                    title: "Distributed Systems",
+                    excerpt: "This page includes a quorum write diagram."
+                )
+            ),
+            ollamaGenerator: StubOllamaGenerator(result: "unused"),
+            claudeGenerator: StubClaudeGenerator(result: "unused")
+        )
+
+        await #expect(throws: DocumentAssistantError.noVisionCapableProvider) {
+            try await assistant.answer(
+                question: "Explain this diagram.",
+                for: ReaderDocument(fileURL: URL(fileURLWithPath: "/tmp/Distributed Systems.pdf")),
+                providerStatuses: [
+                    AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "ready", models: [])
+                ],
+                selection: nil,
+                currentPageIndex: nil,
+                visiblePageIndexes: [],
+                visualAsset: visual
+            )
+        }
+    }
 }
 
 private struct StubDocumentContextExtractor: DocumentContextExtracting {
@@ -151,6 +265,7 @@ private final class RecordingDocumentContextExtractor: @unchecked Sendable, Docu
 private actor StubOllamaGenerator: OllamaGenerating {
     private(set) var lastModel: String?
     private(set) var lastPrompt: String?
+    private(set) var lastImageData: Data?
     private(set) var callCount = 0
     let result: String
 
@@ -158,9 +273,10 @@ private actor StubOllamaGenerator: OllamaGenerating {
         self.result = result
     }
 
-    func generate(model: String, prompt: String) async throws -> String {
+    func generate(model: String, prompt: String, imageData: Data?) async throws -> String {
         lastModel = model
         lastPrompt = prompt
+        lastImageData = imageData
         callCount += 1
         return result
     }

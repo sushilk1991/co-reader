@@ -19,7 +19,8 @@ struct DocumentAssistant: DocumentAssisting {
         providerStatuses: [AIProviderStatus],
         selection: DocumentSelection? = nil,
         currentPageIndex: Int? = nil,
-        visiblePageIndexes: [Int] = []
+        visiblePageIndexes: [Int] = [],
+        visualAsset: DocumentVisualAsset? = nil
     ) async throws -> String {
         let context = try extractor.extractContext(
             for: document,
@@ -28,19 +29,21 @@ struct DocumentAssistant: DocumentAssisting {
             currentPageIndex: currentPageIndex,
             visiblePageIndexes: visiblePageIndexes
         )
-        let prompt = buildPrompt(question: question, context: context)
+        let prompt = buildPrompt(question: question, context: context, visualAsset: visualAsset)
 
-        switch preferredExecutionTarget(from: providerStatuses) {
+        switch preferredExecutionTarget(from: providerStatuses, requiresVision: visualAsset != nil) {
         case let .ollama(model):
-            return try await ollamaGenerator.generate(model: model, prompt: prompt)
+            return try await ollamaGenerator.generate(model: model, prompt: prompt, imageData: visualAsset?.imageData)
         case .claude:
             return try await claudeGenerator.generate(prompt: prompt)
+        case .unavailableVision:
+            throw DocumentAssistantError.noVisionCapableProvider
         case .unavailable:
             throw DocumentAssistantError.noAvailableProvider
         }
     }
 
-    private func buildPrompt(question: String, context: DocumentContext) -> String {
+    private func buildPrompt(question: String, context: DocumentContext, visualAsset: DocumentVisualAsset?) -> String {
         """
         You are Co-Reader, an AI study partner for dense technical documents.
         Answer using the provided document context first. If the excerpt is incomplete, say what is uncertain instead of inventing details.
@@ -50,6 +53,9 @@ struct DocumentAssistant: DocumentAssisting {
 
         Document Excerpt:
         \(context.excerpt)
+
+        Visual Context:
+        \(visualPromptContext(for: visualAsset))
 
         User Question:
         \(question)
@@ -61,7 +67,17 @@ struct DocumentAssistant: DocumentAssisting {
         """
     }
 
-    private func preferredExecutionTarget(from providerStatuses: [AIProviderStatus]) -> ExecutionTarget {
+    private func preferredExecutionTarget(from providerStatuses: [AIProviderStatus], requiresVision: Bool) -> ExecutionTarget {
+        if requiresVision {
+            if let model = providerStatuses
+                .compactMap(\.preferredVisionModel)
+                .first {
+                return .ollama(model: model)
+            }
+
+            return .unavailableVision
+        }
+
         if let ollama = providerStatuses.first(where: { $0.kind == .ollama && $0.isAvailable && !$0.models.isEmpty }) {
             return .ollama(model: ollama.models[0])
         }
@@ -72,10 +88,23 @@ struct DocumentAssistant: DocumentAssisting {
 
         return .unavailable
     }
+
+    private func visualPromptContext(for visualAsset: DocumentVisualAsset?) -> String {
+        guard let visualAsset else {
+            return "No image attached."
+        }
+
+        return """
+        An image is attached from page \(visualAsset.pageIndex + 1).
+        Image type: \(visualAsset.kind.rawValue).
+        Pixel size: \(visualAsset.pixelWidth)x\(visualAsset.pixelHeight).
+        """
+    }
 }
 
 private enum ExecutionTarget {
     case ollama(model: String)
     case claude
+    case unavailableVision
     case unavailable
 }

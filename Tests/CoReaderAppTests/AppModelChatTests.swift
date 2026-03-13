@@ -66,7 +66,8 @@ private struct StubDocumentAssistant: DocumentAssisting {
         providerStatuses: [AIProviderStatus],
         selection: DocumentSelection?,
         currentPageIndex: Int?,
-        visiblePageIndexes: [Int]
+        visiblePageIndexes: [Int],
+        visualAsset: DocumentVisualAsset?
     ) async throws -> String {
         result
     }

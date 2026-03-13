@@ -12,12 +12,17 @@ struct OllamaGenerationClient: OllamaGenerating {
         self.requestPerformer = requestPerformer
     }
 
-    func generate(model: String, prompt: String) async throws -> String {
+    func generate(model: String, prompt: String, imageData: Data?) async throws -> String {
         var request = URLRequest(url: baseURL.appending(path: "/api/generate"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(
-            OllamaGenerationRequest(model: model, prompt: prompt, stream: false)
+            OllamaGenerationRequest(
+                model: model,
+                prompt: prompt,
+                stream: false,
+                images: imageData.map { [$0.base64EncodedString()] }
+            )
         )
 
         let (data, response) = try await requestPerformer.send(request)
@@ -39,6 +44,7 @@ private struct OllamaGenerationRequest: Encodable {
     let model: String
     let prompt: String
     let stream: Bool
+    let images: [String]?
 }
 
 private struct OllamaGenerationResponse: Decodable {

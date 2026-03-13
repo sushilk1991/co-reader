@@ -241,6 +241,158 @@ struct AppModelReaderStateTests {
         #expect(appModel.documentVisuals == [firstVisual, secondVisual])
         #expect(appModel.selectedVisual?.id == firstVisual.id)
     }
+
+    @Test
+    func explainVisualsUsesSelectedVisualWhenAvailable() async throws {
+        let selectedVisual = DocumentVisualAsset(
+            id: UUID(),
+            pageIndex: 6,
+            kind: .embeddedImage,
+            imageData: Data([0xAA, 0xBB]),
+            pixelWidth: 800,
+            pixelHeight: 600,
+            suggestedFilename: "mesh-page-7-figure.png"
+        )
+        let assistant = RecordingDocumentAssistant(result: "Diagram explained.")
+        let appModel = AppModel(
+            documentAssistant: assistant,
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore(),
+            visualExtractor: StubVisualExtractor(visuals: [selectedVisual]),
+            visualExporter: StubVisualExporter()
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llava:latest"])
+        ]
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        await appModel.runQuickAction(LearningAction.explainVisuals)
+
+        #expect(appModel.chatTranscript.last?.content == "Diagram explained.")
+        #expect(assistant.lastVisual?.id == selectedVisual.id)
+    }
+
+    @Test
+    func explainVisualsFallsBackToCurrentPageSnapshot() async throws {
+        let snapshot = DocumentVisualAsset(
+            id: UUID(),
+            pageIndex: 10,
+            kind: .pageSnapshot,
+            imageData: Data([0x10, 0x20]),
+            pixelWidth: 1280,
+            pixelHeight: 960,
+            suggestedFilename: "agents-page-11-snapshot.png"
+        )
+        let assistant = RecordingDocumentAssistant(result: "Snapshot explained.")
+        let appModel = AppModel(
+            documentAssistant: assistant,
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore(),
+            visualExtractor: StubVisualExtractor(visuals: [], renderedSnapshot: snapshot),
+            visualExporter: StubVisualExporter()
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llava:latest"])
+        ]
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        appModel.selectedVisual = nil
+        appModel.updateReadingPosition(currentPageIndex: 10)
+        await appModel.runQuickAction(LearningAction.explainVisuals)
+
+        #expect(appModel.chatTranscript.last?.content == "Snapshot explained.")
+        #expect(assistant.lastVisual?.id == snapshot.id)
+    }
+
+    @Test
+    func explainVisualsFallsBackToFirstExtractedVisualWhenSelectionIsMissing() async throws {
+        let firstVisual = DocumentVisualAsset(
+            id: UUID(),
+            pageIndex: 2,
+            kind: .embeddedImage,
+            imageData: Data([0xFE, 0xED]),
+            pixelWidth: 960,
+            pixelHeight: 540,
+            suggestedFilename: "agents-page-3-figure.png"
+        )
+        let assistant = RecordingDocumentAssistant(result: "First visual explained.")
+        let appModel = AppModel(
+            documentAssistant: assistant,
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore(),
+            visualExtractor: StubVisualExtractor(visuals: [firstVisual]),
+            visualExporter: StubVisualExporter()
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llava:latest"])
+        ]
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        appModel.selectedVisual = nil
+        await appModel.runQuickAction(LearningAction.explainVisuals)
+
+        #expect(appModel.chatTranscript.last?.content == "First visual explained.")
+        #expect(assistant.lastVisual?.id == firstVisual.id)
+        #expect(appModel.selectedVisual?.id == firstVisual.id)
+    }
+
+    @Test
+    func exportSelectedVisualUsesVisualExporter() throws {
+        let exportedURL = URL(fileURLWithPath: "/tmp/exported-visual.png")
+        let visual = DocumentVisualAsset(
+            id: UUID(),
+            pageIndex: 1,
+            kind: .embeddedImage,
+            imageData: Data([0xAB, 0xCD]),
+            pixelWidth: 900,
+            pixelHeight: 500,
+            suggestedFilename: "agents-page-2-figure.png"
+        )
+        let exporter = StubVisualExporter(result: exportedURL)
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore(),
+            visualExtractor: StubVisualExtractor(visuals: [visual]),
+            visualExporter: exporter
+        )
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        let exported = try appModel.exportSelectedVisual()
+
+        #expect(exported == exportedURL)
+        #expect(exporter.lastVisual?.id == visual.id)
+    }
+
+    @Test
+    func exportSelectedVisualFallsBackToFirstVisualWhenSelectionIsMissing() throws {
+        let exportedURL = URL(fileURLWithPath: "/tmp/exported-first-visual.png")
+        let visual = DocumentVisualAsset(
+            id: UUID(),
+            pageIndex: 5,
+            kind: .pageSnapshot,
+            imageData: Data([0xAA, 0x55]),
+            pixelWidth: 1100,
+            pixelHeight: 700,
+            suggestedFilename: "agents-page-6-snapshot.png"
+        )
+        let exporter = StubVisualExporter(result: exportedURL)
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore(),
+            visualExtractor: StubVisualExtractor(visuals: [visual]),
+            visualExporter: exporter
+        )
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        appModel.selectedVisual = nil
+        let exported = try appModel.exportSelectedVisual()
+
+        #expect(exported == exportedURL)
+        #expect(exporter.lastVisual?.id == visual.id)
+        #expect(appModel.selectedVisual?.id == visual.id)
+    }
 }
 
 @MainActor
@@ -288,7 +440,8 @@ private struct StubDocumentAssistant: DocumentAssisting {
         providerStatuses: [AIProviderStatus],
         selection: DocumentSelection?,
         currentPageIndex: Int?,
-        visiblePageIndexes: [Int]
+        visiblePageIndexes: [Int],
+        visualAsset: DocumentVisualAsset?
     ) async throws -> String {
         result
     }
@@ -301,12 +454,54 @@ private final class StubKnowledgeCapture: KnowledgeCapturing {
 
 private struct StubVisualExtractor: DocumentVisualExtracting {
     let visuals: [DocumentVisualAsset]
+    let renderedSnapshot: DocumentVisualAsset?
+
+    init(visuals: [DocumentVisualAsset], renderedSnapshot: DocumentVisualAsset? = nil) {
+        self.visuals = visuals
+        self.renderedSnapshot = renderedSnapshot
+    }
 
     func extractVisuals(for document: ReaderDocument) throws -> [DocumentVisualAsset] {
         visuals
     }
 
     func renderPageSnapshot(for document: ReaderDocument, pageIndex: Int) throws -> DocumentVisualAsset? {
-        visuals.first { $0.pageIndex == pageIndex }
+        renderedSnapshot ?? visuals.first { $0.pageIndex == pageIndex }
+    }
+}
+
+private final class StubVisualExporter: @unchecked Sendable, DocumentVisualExporting {
+    private(set) var lastVisual: DocumentVisualAsset?
+    private let result: URL
+
+    init(result: URL = URL(fileURLWithPath: "/tmp/export.png")) {
+        self.result = result
+    }
+
+    func exportPNG(_ visual: DocumentVisualAsset, for document: ReaderDocument) throws -> URL {
+        lastVisual = visual
+        return result
+    }
+}
+
+private final class RecordingDocumentAssistant: @unchecked Sendable, DocumentAssisting {
+    private(set) var lastVisual: DocumentVisualAsset?
+    let result: String
+
+    init(result: String) {
+        self.result = result
+    }
+
+    func answer(
+        question: String,
+        for document: ReaderDocument,
+        providerStatuses: [AIProviderStatus],
+        selection: DocumentSelection?,
+        currentPageIndex: Int?,
+        visiblePageIndexes: [Int],
+        visualAsset: DocumentVisualAsset?
+    ) async throws -> String {
+        lastVisual = visualAsset
+        return result
     }
 }
