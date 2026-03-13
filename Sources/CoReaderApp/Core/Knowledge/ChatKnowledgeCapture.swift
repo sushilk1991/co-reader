@@ -8,13 +8,17 @@ struct ChatKnowledgeCapture: KnowledgeCapturing {
     }
 
     func capture(question: String, answer: String, for document: ReaderDocument) throws {
+        let bullets = summarize(answer: answer)
         let note = KnowledgeNote(
             id: UUID(),
+            kind: .aiChat,
             title: "\(document.title) AI Chat",
             sourceIdentifier: document.fileURL.lastPathComponent,
             createdAt: Date(),
-            bulletPoints: summarize(answer: answer),
-            highlightExcerpt: question
+            bulletPoints: bullets,
+            highlightExcerpt: question,
+            pageIndex: nil,
+            notePreview: bullets.first
         )
 
         try repository.save(note: note)

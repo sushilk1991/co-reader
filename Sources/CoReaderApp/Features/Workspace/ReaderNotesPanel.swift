@@ -35,6 +35,7 @@ struct ReaderNotesPanel: View {
                 .padding(10)
                 .frame(minHeight: 150)
                 .scrollContentBackground(.hidden)
+                .accessibilityLabel("Reader note draft")
                 .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 18))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18)
@@ -92,9 +93,6 @@ struct ReaderNotesPanel: View {
                     }
                 }
             }
-        }
-        .task {
-            try? appModel.refreshSavedNotes()
         }
     }
 }

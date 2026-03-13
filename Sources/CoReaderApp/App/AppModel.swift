@@ -165,49 +165,13 @@ final class AppModel {
     }
 
     func saveHighlightFromSelection() throws {
-        guard let document = selectedDocument else {
-            throw DocumentAssistantError.noSelectedDocument
-        }
-
-        guard let currentSelection else {
-            throw ReaderWorkspaceError.noActiveSelection
-        }
-
         let noteText = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let savedHighlight = ReaderHighlight(
-            id: UUID(),
-            documentTitle: document.title,
-            pageIndex: currentSelection.pageIndex,
-            quotedText: currentSelection.text,
-            noteText: noteText.isEmpty ? nil : noteText,
-            createdAt: Date()
-        )
-        savedHighlights.insert(savedHighlight, at: 0)
-
-        let note = KnowledgeNote(
-            id: savedHighlight.id,
-            title: "\(document.title) Highlight",
-            sourceIdentifier: document.fileURL.lastPathComponent,
-            createdAt: savedHighlight.createdAt,
-            bulletPoints: highlightBulletPoints(noteText: noteText, selection: currentSelection),
-            highlightExcerpt: currentSelection.text
-        )
-        try noteStore?.save(note: note)
+        try saveHighlight(noteText: noteText.isEmpty ? nil : noteText)
         noteDraft = ""
-        openInspector(tab: .highlights)
-        try refreshSavedNotesForSelectedDocument()
     }
 
     func saveQuickHighlight() throws {
-        let existingDraft = noteDraft
-        noteDraft = ""
-
-        do {
-            try saveHighlightFromSelection()
-        } catch {
-            noteDraft = existingDraft
-            throw error
-        }
+        try saveHighlight(noteText: nil)
     }
 
     func saveNote() throws {
@@ -222,11 +186,14 @@ final class AppModel {
 
         let note = KnowledgeNote(
             id: UUID(),
+            kind: .note,
             title: "\(document.title) Note",
             sourceIdentifier: document.fileURL.lastPathComponent,
             createdAt: Date(),
             bulletPoints: noteBulletPoints(from: trimmedNote),
-            highlightExcerpt: currentSelection?.text
+            highlightExcerpt: currentSelection?.text,
+            pageIndex: currentSelection?.pageIndex,
+            notePreview: trimmedNote
         )
 
         try noteStore?.save(note: note)
@@ -237,6 +204,7 @@ final class AppModel {
 
     func refreshSavedNotes(query: String = "") throws {
         savedNotes = try noteStore?.searchNotes(matching: query, limit: 20) ?? []
+        savedHighlights = savedNotes.compactMap(makeHighlight(from:))
     }
 
     func prepareSelectionNote() {
@@ -395,6 +363,69 @@ final class AppModel {
 
     private func refreshSavedNotesForSelectedDocument() throws {
         try refreshSavedNotes(query: selectedDocument?.fileURL.lastPathComponent ?? "")
+    }
+
+    private func makeHighlight(from summary: KnowledgeNoteSummary) -> ReaderHighlight? {
+        guard summary.kind == .highlight,
+              let quotedText = summary.highlightExcerpt,
+              let pageIndex = summary.pageIndex else {
+            return nil
+        }
+
+        return ReaderHighlight(
+            id: summary.id,
+            documentTitle: documentTitle(for: summary),
+            pageIndex: pageIndex,
+            quotedText: quotedText,
+            noteText: summary.notePreview,
+            createdAt: summary.createdAt
+        )
+    }
+
+    private func saveHighlight(noteText: String?) throws {
+        guard let document = selectedDocument else {
+            throw DocumentAssistantError.noSelectedDocument
+        }
+
+        guard let currentSelection else {
+            throw ReaderWorkspaceError.noActiveSelection
+        }
+
+        let savedHighlight = ReaderHighlight(
+            id: UUID(),
+            documentTitle: document.title,
+            pageIndex: currentSelection.pageIndex,
+            quotedText: currentSelection.text,
+            noteText: noteText,
+            createdAt: Date()
+        )
+        savedHighlights.insert(savedHighlight, at: 0)
+
+        let note = KnowledgeNote(
+            id: savedHighlight.id,
+            kind: .highlight,
+            title: "\(document.title) Highlight",
+            sourceIdentifier: document.fileURL.lastPathComponent,
+            createdAt: savedHighlight.createdAt,
+            bulletPoints: highlightBulletPoints(noteText: noteText ?? "", selection: currentSelection),
+            highlightExcerpt: currentSelection.text,
+            pageIndex: currentSelection.pageIndex,
+            notePreview: noteText
+        )
+        try noteStore?.save(note: note)
+        try refreshSavedNotesForSelectedDocument()
+        openInspector(tab: .highlights)
+    }
+
+    private func documentTitle(for summary: KnowledgeNoteSummary) -> String {
+        if let selectedDocument,
+           selectedDocument.fileURL.lastPathComponent == summary.sourceIdentifier {
+            return selectedDocument.title
+        }
+
+        return summary.sourceIdentifier
+            .replacingOccurrences(of: ".pdf", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: ".epub", with: "", options: .caseInsensitive)
     }
 }
 

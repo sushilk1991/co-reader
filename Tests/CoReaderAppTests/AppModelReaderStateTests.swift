@@ -83,6 +83,32 @@ struct AppModelReaderStateTests {
     }
 
     @Test
+    func quickHighlightPreservesInProgressNoteDraft() throws {
+        let noteStore = StubNoteStore()
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: noteStore
+        )
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Bookmarked Systems.pdf"))
+        appModel.updateCurrentSelection(
+            DocumentSelection(
+                text: "Backpressure protects downstream consumers.",
+                pageIndex: 4,
+                surroundingText: "The chapter explains bounded queues and admission control."
+            )
+        )
+        appModel.noteDraft = "Draft note that should survive."
+
+        try appModel.saveQuickHighlight()
+
+        #expect(appModel.savedHighlights.count == 1)
+        #expect(appModel.savedHighlights[0].noteText == nil)
+        #expect(appModel.noteDraft == "Draft note that should survive.")
+        #expect(noteStore.savedNotes[0].notePreview == nil)
+    }
+
+    @Test
     func selectingDifferentDocumentResetsReaderSessionAndScopesNotes() throws {
         let noteStore = StubNoteStore()
         let appModel = AppModel(
@@ -118,21 +144,27 @@ struct AppModelReaderStateTests {
         try noteStore.save(
             note: KnowledgeNote(
                 id: UUID(),
+                kind: .highlight,
                 title: "Book One Highlight",
                 sourceIdentifier: "Book One.pdf",
                 createdAt: Date(),
                 bulletPoints: ["Old note"],
-                highlightExcerpt: "Old quote"
+                highlightExcerpt: "Old quote",
+                pageIndex: 0,
+                notePreview: "Old note"
             )
         )
         try noteStore.save(
             note: KnowledgeNote(
                 id: UUID(),
+                kind: .highlight,
                 title: "Book Two Highlight",
                 sourceIdentifier: "Book Two.pdf",
                 createdAt: Date().addingTimeInterval(1),
                 bulletPoints: ["Fresh note"],
-                highlightExcerpt: "Fresh quote"
+                highlightExcerpt: "Fresh quote",
+                pageIndex: 9,
+                notePreview: "Fresh note"
             )
         )
 
@@ -145,10 +177,12 @@ struct AppModelReaderStateTests {
         #expect(appModel.visiblePageIndexes.isEmpty)
         #expect(appModel.chatInput.isEmpty)
         #expect(appModel.chatTranscript.isEmpty)
-        #expect(appModel.savedHighlights.isEmpty)
         #expect(appModel.noteDraft.isEmpty)
         #expect(appModel.savedNotes.count == 1)
         #expect(appModel.savedNotes[0].sourceIdentifier == "Book Two.pdf")
+        #expect(appModel.savedHighlights.count == 1)
+        #expect(appModel.savedHighlights[0].pageIndex == 9)
+        #expect(appModel.savedHighlights[0].quotedText == "Fresh quote")
     }
 
     @Test
@@ -199,10 +233,13 @@ private final class StubNoteStore: KnowledgeNoteStoring {
 
             return KnowledgeNoteSummary(
                 id: note.id,
+                kind: note.kind,
                 title: note.title,
                 sourceIdentifier: note.sourceIdentifier,
                 createdAt: note.createdAt,
                 highlightExcerpt: note.highlightExcerpt,
+                pageIndex: note.pageIndex,
+                notePreview: note.notePreview,
                 fileURL: URL(fileURLWithPath: "/tmp/\(note.id.uuidString).md")
             )
         }

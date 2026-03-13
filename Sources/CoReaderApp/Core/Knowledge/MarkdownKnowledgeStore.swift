@@ -40,7 +40,12 @@ struct MarkdownKnowledgeStore {
         lines.append("## Metadata")
         lines.append("")
         lines.append("- Note ID: \(note.id.uuidString.lowercased())")
+        lines.append("- Note Type: \(note.kind.rawValue)")
         lines.append("- Created At: \(ISO8601DateFormatter().string(from: note.createdAt))")
+
+        if let pageIndex = note.pageIndex {
+            lines.append("- Page: \(pageIndex + 1)")
+        }
 
         return lines.joined(separator: "\n")
     }

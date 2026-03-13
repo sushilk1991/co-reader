@@ -11,6 +11,7 @@ struct KnowledgeRepositoryTests {
         let repository = try environment.makeRepository()
         let note = KnowledgeNote(
             id: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
+            kind: .highlight,
             title: "Ollama Primer",
             sourceIdentifier: "chapter-1",
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
@@ -18,7 +19,9 @@ struct KnowledgeRepositoryTests {
                 "Local models keep document context private.",
                 "Probe localhost:11434 before showing model actions."
             ],
-            highlightExcerpt: "Ollama exposes model tags via /api/tags."
+            highlightExcerpt: "Ollama exposes model tags via /api/tags.",
+            pageIndex: 3,
+            notePreview: "Local models keep document context private."
         )
 
         try repository.save(note: note)
@@ -31,6 +34,9 @@ struct KnowledgeRepositoryTests {
         #expect(results.count == 1)
         #expect(results.first?.title == "Ollama Primer")
         #expect(results.first?.sourceIdentifier == "chapter-1")
+        #expect(results.first?.kind == .highlight)
+        #expect(results.first?.pageIndex == 3)
+        #expect(results.first?.notePreview == "Local models keep document context private.")
     }
 
     @Test
@@ -41,19 +47,25 @@ struct KnowledgeRepositoryTests {
         let repository = try environment.makeRepository()
         let olderNote = KnowledgeNote(
             id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            kind: .note,
             title: "Local inference baseline",
             sourceIdentifier: "pdf-1",
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
             bulletPoints: ["Local inference avoids upload latency."],
-            highlightExcerpt: nil
+            highlightExcerpt: nil,
+            pageIndex: nil,
+            notePreview: "Local inference avoids upload latency."
         )
         let newerNote = KnowledgeNote(
             id: UUID(uuidString: "66666666-7777-8888-9999-AAAAAAAAAAAA")!,
+            kind: .highlight,
             title: "Local indexing pipeline",
             sourceIdentifier: "pdf-2",
             createdAt: Date(timeIntervalSince1970: 1_700_000_100),
             bulletPoints: ["Local note indexes should stay searchable."],
-            highlightExcerpt: "SQLite makes local lookups predictable."
+            highlightExcerpt: "SQLite makes local lookups predictable.",
+            pageIndex: 11,
+            notePreview: "Local note indexes should stay searchable."
         )
 
         try repository.save(note: olderNote)
