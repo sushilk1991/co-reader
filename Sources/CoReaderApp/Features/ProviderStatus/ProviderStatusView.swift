@@ -24,9 +24,27 @@ struct ProviderStatusView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 18))
 
+            if appModel.providerStatuses.isEmpty {
+                ContentUnavailableView(
+                    "Provider status pending",
+                    systemImage: "network.badge.shield.half.filled",
+                    description: Text("The app will populate Ollama and Claude availability after the initial probe completes.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(appModel.providerStatuses) { provider in
+                        ProviderStatusCard(provider: provider)
+                    }
+                }
+            }
+
             Spacer()
         }
         .padding(32)
+        .task {
+            await appModel.refreshProvidersIfNeeded()
+        }
     }
 }
 
