@@ -10,6 +10,7 @@ struct ReaderInspectorView: View {
                 Text("Ask").tag(InspectorTab.ask)
                 Text("Notes").tag(InspectorTab.notes)
                 Text("Highlights").tag(InspectorTab.highlights)
+                Text("Visuals").tag(InspectorTab.visuals)
             }
             .pickerStyle(.segmented)
 
@@ -21,6 +22,8 @@ struct ReaderInspectorView: View {
                     ReaderNotesPanel(appModel: appModel)
                 case .highlights:
                     ReaderHighlightsPanel(appModel: appModel)
+                case .visuals:
+                    ReaderVisualsPanel(appModel: appModel)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

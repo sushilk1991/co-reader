@@ -208,6 +208,39 @@ struct AppModelReaderStateTests {
         #expect(appModel.noteDraft.contains("Key idea:"))
         #expect(appModel.noteDraft.contains("Quote: The quality of the code from an expert is evident."))
     }
+
+    @Test
+    func importingDocumentLoadsVisualsAndSelectsTheFirstOne() {
+        let firstVisual = DocumentVisualAsset(
+            id: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
+            pageIndex: 2,
+            kind: .embeddedImage,
+            imageData: Data([0x01, 0x02, 0x03]),
+            pixelWidth: 640,
+            pixelHeight: 480,
+            suggestedFilename: "agents-page-3-figure-1.png"
+        )
+        let secondVisual = DocumentVisualAsset(
+            id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            pageIndex: 4,
+            kind: .pageSnapshot,
+            imageData: Data([0x04, 0x05, 0x06]),
+            pixelWidth: 1280,
+            pixelHeight: 720,
+            suggestedFilename: "agents-page-5-snapshot.png"
+        )
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore(),
+            visualExtractor: StubVisualExtractor(visuals: [firstVisual, secondVisual])
+        )
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+
+        #expect(appModel.documentVisuals == [firstVisual, secondVisual])
+        #expect(appModel.selectedVisual?.id == firstVisual.id)
+    }
 }
 
 @MainActor
@@ -264,4 +297,16 @@ private struct StubDocumentAssistant: DocumentAssisting {
 @MainActor
 private final class StubKnowledgeCapture: KnowledgeCapturing {
     func capture(question: String, answer: String, for document: ReaderDocument) throws {}
+}
+
+private struct StubVisualExtractor: DocumentVisualExtracting {
+    let visuals: [DocumentVisualAsset]
+
+    func extractVisuals(for document: ReaderDocument) throws -> [DocumentVisualAsset] {
+        visuals
+    }
+
+    func renderPageSnapshot(for document: ReaderDocument, pageIndex: Int) throws -> DocumentVisualAsset? {
+        visuals.first { $0.pageIndex == pageIndex }
+    }
 }

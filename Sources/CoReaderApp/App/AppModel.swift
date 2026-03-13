@@ -9,6 +9,7 @@ final class AppModel {
     private let documentAssistant: DocumentAssisting
     private let knowledgeCapture: KnowledgeCapturing
     private let noteStore: KnowledgeNoteStoring?
+    private let visualExtractor: DocumentVisualExtracting
     private var documentLibrary = DocumentLibrary()
     private(set) var hasLoadedProviders = false
     var isDiscoveringProviders = false
@@ -23,6 +24,8 @@ final class AppModel {
     var currentSelection: DocumentSelection?
     var currentPageIndex: Int?
     var visiblePageIndexes: [Int] = []
+    var documentVisuals: [DocumentVisualAsset] = []
+    var selectedVisual: DocumentVisualAsset?
     var noteDraft = ""
     var savedHighlights: [ReaderHighlight] = []
     var savedNotes: [KnowledgeNoteSummary] = []
@@ -34,10 +37,12 @@ final class AppModel {
         providerDiscovery: AIProviderDiscovery = .live(),
         documentAssistant: DocumentAssisting = DocumentAssistant(),
         knowledgeCapture: KnowledgeCapturing? = nil,
-        noteStore: KnowledgeNoteStoring? = nil
+        noteStore: KnowledgeNoteStoring? = nil,
+        visualExtractor: DocumentVisualExtracting = LiveDocumentVisualExtractor()
     ) {
         self.providerDiscovery = providerDiscovery
         self.documentAssistant = documentAssistant
+        self.visualExtractor = visualExtractor
         let systems = AppModel.defaultKnowledgeSystems()
         self.knowledgeCapture = knowledgeCapture ?? systems.capture
         self.noteStore = noteStore ?? systems.noteStore
@@ -162,6 +167,11 @@ final class AppModel {
     func updateReadingPosition(currentPageIndex: Int?, visiblePageIndexes: [Int] = []) {
         self.currentPageIndex = currentPageIndex
         self.visiblePageIndexes = visiblePageIndexes
+    }
+
+    func selectVisual(_ visual: DocumentVisualAsset) {
+        selectedVisual = visual
+        openInspector(tab: .visuals)
     }
 
     func saveHighlightFromSelection() throws {
@@ -352,6 +362,8 @@ final class AppModel {
         currentSelection = nil
         currentPageIndex = nil
         visiblePageIndexes = []
+        documentVisuals = []
+        selectedVisual = nil
         noteDraft = ""
         chatInput = ""
         chatError = nil
@@ -359,6 +371,8 @@ final class AppModel {
         savedHighlights = []
 
         try? refreshSavedNotesForSelectedDocument()
+        documentVisuals = (try? visualExtractor.extractVisuals(for: document)) ?? []
+        selectedVisual = documentVisuals.first
     }
 
     private func refreshSavedNotesForSelectedDocument() throws {
