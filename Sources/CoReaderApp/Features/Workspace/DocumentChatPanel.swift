@@ -15,6 +15,19 @@ struct DocumentChatPanel: View {
                     .foregroundStyle(.secondary)
             }
 
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(LearningAction.allCases) { action in
+                        Button(action.title, systemImage: action.systemImage) {
+                            Task {
+                                await appModel.runQuickAction(action)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+
             if appModel.chatTranscript.isEmpty {
                 ContentUnavailableView(
                     "No questions yet",

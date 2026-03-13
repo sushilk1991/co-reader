@@ -39,6 +39,22 @@ struct AppModelChatTests {
 
         #expect(capture.capturedQuestions == ["Summarize the tradeoffs."])
     }
+
+    @Test
+    func quickActionUsesPromptTemplateAndAsksQuestion() async throws {
+        let appModel = AppModel(documentAssistant: StubDocumentAssistant(result: "Quiz created."))
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Advanced Algorithms.pdf"))
+
+        await appModel.runQuickAction(.quizMe)
+
+        #expect(appModel.chatTranscript.count == 2)
+        #expect(appModel.chatTranscript[0].content.contains("short quiz"))
+        #expect(appModel.chatTranscript[0].content.contains("Advanced Algorithms"))
+        #expect(appModel.chatTranscript[1].content == "Quiz created.")
+    }
 }
 
 private struct StubDocumentAssistant: DocumentAssisting {

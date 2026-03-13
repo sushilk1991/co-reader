@@ -126,6 +126,16 @@ final class AppModel {
         }
     }
 
+    func runQuickAction(_ action: LearningAction) async {
+        guard let document = selectedDocument else {
+            chatError = DocumentAssistantError.noSelectedDocument.localizedDescription
+            return
+        }
+
+        chatInput = action.prompt(for: document)
+        await askQuestion()
+    }
+
     func refreshProviders() async {
         isDiscoveringProviders = true
         defer { isDiscoveringProviders = false }
