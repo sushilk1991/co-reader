@@ -6,19 +6,34 @@ import Observation
 final class AppModel {
     let appTitle = "Co-Reader"
     private let providerDiscovery: AIProviderDiscovery
+    private let documentAssistant: DocumentAssisting
     private var documentLibrary = DocumentLibrary()
     private(set) var hasLoadedProviders = false
     var isDiscoveringProviders = false
     var isImportingDocument = false
+    var isAskingQuestion = false
     var providerStatuses: [AIProviderStatus] = []
     var selectedDocument: ReaderDocument?
+    var chatInput = ""
+    var chatError: String?
+    var chatTranscript: [ChatMessage] = []
 
-    init(providerDiscovery: AIProviderDiscovery = .live()) {
+    init(
+        providerDiscovery: AIProviderDiscovery = .live(),
+        documentAssistant: DocumentAssisting = DocumentAssistant()
+    ) {
         self.providerDiscovery = providerDiscovery
+        self.documentAssistant = documentAssistant
     }
 
     var importedDocuments: [ReaderDocument] {
         documentLibrary.documents
+    }
+
+    var canSubmitQuestion: Bool {
+        !chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            selectedDocument != nil &&
+            !isAskingQuestion
     }
 
     var statusHeadline: String {
@@ -68,6 +83,36 @@ final class AppModel {
 
     func selectDocument(_ document: ReaderDocument) {
         selectedDocument = document
+    }
+
+    func askQuestion() async {
+        let question = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else {
+            return
+        }
+
+        guard let document = selectedDocument else {
+            chatError = DocumentAssistantError.noSelectedDocument.localizedDescription
+            return
+        }
+
+        chatError = nil
+        chatInput = ""
+        isAskingQuestion = true
+        chatTranscript.append(ChatMessage(role: .user, content: question))
+        defer { isAskingQuestion = false }
+
+        do {
+            let answer = try await documentAssistant.answer(
+                question: question,
+                for: document,
+                providerStatuses: providerStatuses
+            )
+            chatTranscript.append(ChatMessage(role: .assistant, content: answer))
+        } catch {
+            chatError = error.localizedDescription
+            chatTranscript.append(ChatMessage(role: .assistant, content: error.localizedDescription))
+        }
     }
 
     func refreshProviders() async {

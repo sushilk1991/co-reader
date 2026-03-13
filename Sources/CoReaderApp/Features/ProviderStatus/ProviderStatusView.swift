@@ -13,6 +13,8 @@ struct ProviderStatusView: View {
                 .frame(width: 340)
 
             DocumentPreviewPanel(document: appModel.selectedDocument)
+
+            DocumentChatPanel(appModel: appModel)
         }
         .padding(24)
         .task {
