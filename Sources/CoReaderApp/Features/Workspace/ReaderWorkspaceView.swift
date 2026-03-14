@@ -26,14 +26,21 @@ struct ReaderWorkspaceView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            if appModel.isCommandPaletteVisible {
+                CommandPaletteView(appModel: appModel)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+            }
+        }
+        .animation(.spring(response: 0.22, dampingFraction: 0.88), value: appModel.isCommandPaletteVisible)
         .background {
             ZStack {
                 ReaderTheme.workspaceGradient
 
                 RadialGradient(
                     colors: [
-                        Color.white.opacity(0.68),
-                        Color.white.opacity(0.0)
+                        ReaderTheme.workspaceGlow.opacity(0.68),
+                        ReaderTheme.workspaceGlow.opacity(0.0)
                     ],
                     center: .topLeading,
                     startRadius: 40,

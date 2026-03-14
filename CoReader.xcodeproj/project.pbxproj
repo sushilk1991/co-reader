@@ -63,6 +63,7 @@
 		68454E236DA89D4EBE0F548A /* LearningAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 882EE24B0ACF483EC81DDCBF /* LearningAction.swift */; };
 		6A05901663D549A1B588667E /* ShellCommandResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 510366920308F8FE428195EA /* ShellCommandResult.swift */; };
 		6A8E8A79B5C81BF0FD82FD8C /* KnowledgeCapturing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25F18F03E292B13CDE697E4 /* KnowledgeCapturing.swift */; };
+		6AEC56CDE9A2B526CC97FCAD /* CoReaderPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE616B60941D8F88B497662 /* CoReaderPaths.swift */; };
 		6AFBCB64A30C21F6F8DE1637 /* KnowledgeNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D396F09C119AA183206E9C2 /* KnowledgeNote.swift */; };
 		6FB9C1D62DD464D6D6FDE6E3 /* DocumentVisualAsset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29DE6D4D600BB33BF871B61F /* DocumentVisualAsset.swift */; };
 		7319902936765C738A7F8FAE /* ChatKnowledgeCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4B8FCB6013426C05B9F209 /* ChatKnowledgeCapture.swift */; };
@@ -75,6 +76,7 @@
 		87E2722A3FBF8B808B7481DB /* DocumentAssisting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6380936F24813C8AD17D8EFC /* DocumentAssisting.swift */; };
 		880E04675F69A96ECE914559 /* URLSessionHTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D189137BA2C1E4F0BFB7D226 /* URLSessionHTTPClient.swift */; };
 		882BE5067B6F3217F7B6B499 /* ChatMessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8898F9811B122EF9A4B16F3D /* ChatMessageBubble.swift */; };
+		8A711E762F14B739AE39E27C /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF42FD850A6C4E0ABE5311B9 /* CommandPaletteView.swift */; };
 		8A9B79B27E90475AF4D21C23 /* DocumentVisualExporting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9854DE61AD1DDEA1596A6FCA /* DocumentVisualExporting.swift */; };
 		8E19DCDE0D8B3DB9BEF4D14B /* EPUBSelectionPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F9C067AF85CD73450D6394 /* EPUBSelectionPayload.swift */; };
 		8E4537B9B2EB598676189543 /* HighlightingPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 552E19F67983AAF06B5FD607 /* HighlightingPDFView.swift */; };
@@ -164,6 +166,7 @@
 		4B8E6448B34884A821E5787C /* DocumentContextExtracting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentContextExtracting.swift; sourceTree = "<group>"; };
 		4D00D5ECEFAEADDC656ED589 /* DocumentVisualExtracting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentVisualExtracting.swift; sourceTree = "<group>"; };
 		4D519DB77108CF29A304E8BC /* DocumentLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentLibrary.swift; sourceTree = "<group>"; };
+		4DE616B60941D8F88B497662 /* CoReaderPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoReaderPaths.swift; sourceTree = "<group>"; };
 		510366920308F8FE428195EA /* ShellCommandResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellCommandResult.swift; sourceTree = "<group>"; };
 		5221809D8965D61EC9B23A92 /* ReaderTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTheme.swift; sourceTree = "<group>"; };
 		523B6A342F4E3D99CA0F0462 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
@@ -218,6 +221,7 @@
 		B8EEBE611ED78330846F1268 /* ClaudeCodeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeClient.swift; sourceTree = "<group>"; };
 		BD7BB5792F89262B1F667FE3 /* KnowledgeNoteKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeNoteKind.swift; sourceTree = "<group>"; };
 		BE8E2B4E4368076BD8353595 /* InspectorTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorTab.swift; sourceTree = "<group>"; };
+		BF42FD850A6C4E0ABE5311B9 /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
 		C1984459B3CE166688D9E788 /* DocumentContextComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentContextComposerTests.swift; sourceTree = "<group>"; };
 		C335E57A9DFAA7642F96485D /* DocumentChatPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentChatPanel.swift; sourceTree = "<group>"; };
 		C7C16BD7FD89850581F45C1C /* PDFVisualExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFVisualExtractorTests.swift; sourceTree = "<group>"; };
@@ -368,10 +372,19 @@
 			path = CoReaderApp;
 			sourceTree = "<group>";
 		};
+		72F3500138DCD05192501243 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				4DE616B60941D8F88B497662 /* CoReaderPaths.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
 		7E4613841D4340F471A97BA5 /* Workspace */ = {
 			isa = PBXGroup;
 			children = (
 				8898F9811B122EF9A4B16F3D /* ChatMessageBubble.swift */,
+				BF42FD850A6C4E0ABE5311B9 /* CommandPaletteView.swift */,
 				C335E57A9DFAA7642F96485D /* DocumentChatPanel.swift */,
 				74F1432913BD06755A2E1061 /* DocumentPreviewPanel.swift */,
 				2EDAD59BF3F98CE6F0D1A486 /* EPUBPreviewView.swift */,
@@ -511,6 +524,7 @@
 				B309DE2BB75257250249BE37 /* AI */,
 				672F2FF83EDE8403DC01AB5A /* Documents */,
 				A208F45E955A6D944C79EE22 /* Knowledge */,
+				72F3500138DCD05192501243 /* Storage */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -649,6 +663,8 @@
 				DE06C299A05A6D72AC4C2701 /* ClaudeCodeClient.swift in Sources */,
 				01FCD57D2FA235C2CE4004AE /* ClaudeGenerating.swift in Sources */,
 				5D9EA6EA706FAA1705817B4D /* CoReaderApp.swift in Sources */,
+				6AEC56CDE9A2B526CC97FCAD /* CoReaderPaths.swift in Sources */,
+				8A711E762F14B739AE39E27C /* CommandPaletteView.swift in Sources */,
 				5AFF7BAE2B41503A6B25C2C1 /* DocumentAssistant.swift in Sources */,
 				E142F24065424038E9F123E4 /* DocumentAssistantError.swift in Sources */,
 				87E2722A3FBF8B808B7481DB /* DocumentAssisting.swift in Sources */,

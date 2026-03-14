@@ -10,5 +10,13 @@ struct CoReaderApp: App {
                 .frame(minWidth: 1120, minHeight: 760)
         }
         .defaultSize(width: 1320, height: 860)
+        .commands {
+            CommandGroup(after: .textEditing) {
+                Button("Command Palette") {
+                    appModel.isCommandPaletteVisible.toggle()
+                }
+                .keyboardShortcut("k", modifiers: .command)
+            }
+        }
     }
 }

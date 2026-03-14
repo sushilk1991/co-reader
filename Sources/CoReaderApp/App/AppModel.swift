@@ -35,6 +35,7 @@ final class AppModel {
     var noteDraft = ""
     var savedHighlights: [ReaderHighlight] = []
     var savedNotes: [KnowledgeNoteSummary] = []
+    var isCommandPaletteVisible = false
     var chatInput = ""
     var chatError: String?
     var chatTranscript: [ChatMessage] = []

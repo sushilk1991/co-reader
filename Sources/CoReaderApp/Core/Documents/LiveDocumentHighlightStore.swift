@@ -17,20 +17,8 @@ struct LiveDocumentHighlightStore: DocumentHighlightStoring {
     }
 
     static func liveDefault() throws -> LiveDocumentHighlightStore {
-        guard let applicationSupportDirectory = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
-            throw NSError(
-                domain: "CoReader.DocumentHighlightStore",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Unable to resolve Application Support directory."]
-            )
-        }
-
-        let directory = applicationSupportDirectory
-            .appending(path: "CoReader", directoryHint: .isDirectory)
-            .appending(path: "Highlights", directoryHint: .isDirectory)
+        let syncedDir = try CoReaderPaths.syncedDataDirectory
+        let directory = syncedDir.appending(path: "Highlights", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return LiveDocumentHighlightStore(baseDirectory: directory)
     }
