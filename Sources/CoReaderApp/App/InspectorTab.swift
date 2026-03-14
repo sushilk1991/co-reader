@@ -3,4 +3,5 @@ enum InspectorTab: String, CaseIterable, Equatable, Sendable {
     case notes
     case highlights
     case visuals
+    case knowledge
 }

@@ -18,6 +18,7 @@ final class AppModel {
     private var readingStateSaveTask: Task<Void, Never>?
     private var summarizedPageKeys: Set<String> = []
     private var pageSummaries: [String: String] = [:]
+    private var conceptsByPage: [String: [String]] = [:]
     private var summaryTask: Task<Void, Never>?
     private(set) var hasLoadedProviders = false
     var isDiscoveringProviders = false
@@ -43,6 +44,7 @@ final class AppModel {
     var savedNotes: [KnowledgeNoteSummary] = []
     var isCommandPaletteVisible = false
     var autoSummary: String?
+    var autoConceptTags: [String] = []
     var chatInput = ""
     var chatError: String?
     var chatTranscript: [ChatMessage] = []
@@ -84,6 +86,16 @@ final class AppModel {
 
     var hasActiveSelection: Bool {
         currentSelection != nil
+    }
+
+    var allConceptTags: [String] {
+        guard let selectedDocument else { return [] }
+        let prefix = "\(selectedDocument.id)-"
+        let docConcepts = conceptsByPage
+            .filter { $0.key.hasPrefix(prefix) }
+            .values
+            .flatMap { $0 }
+        return Array(Set(docConcepts)).sorted()
     }
 
     var supportsPersistentPDFHighlights: Bool {
@@ -547,6 +559,7 @@ final class AppModel {
 
         if let cached = pageSummaries[key] {
             autoSummary = cached
+            autoConceptTags = conceptsByPage[key] ?? []
             return
         }
 
@@ -562,7 +575,7 @@ final class AppModel {
 
             do {
                 let answer = try await documentAssistant.answer(
-                    question: "Provide a concise 2-3 sentence summary of this section's key points.",
+                    question: "Provide a concise 2-3 sentence summary of this section's key points. Then on a new line starting with 'Tags:', list 3-5 key concepts as comma-separated tags.",
                     for: document,
                     providerStatuses: providerStatuses,
                     scope: .focus,
@@ -571,17 +584,37 @@ final class AppModel {
                     visiblePageIndexes: [pageIndex],
                     visualAsset: nil
                 )
+
+                let (summary, tags) = parseSummaryAndTags(answer)
                 summarizedPageKeys.insert(key)
-                pageSummaries[key] = answer
+                pageSummaries[key] = summary
+                conceptsByPage[key] = tags
 
                 if self.selectedDocument?.id == document.id,
                    self.currentPageIndex == pageIndex {
-                    autoSummary = answer
+                    autoSummary = summary
+                    autoConceptTags = tags
                 }
             } catch {
                 // Silent failure for background feature
             }
         }
+    }
+
+    private func parseSummaryAndTags(_ text: String) -> (summary: String, tags: [String]) {
+        let parts = text.components(separatedBy: "Tags:")
+        let summary = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard parts.count > 1 else {
+            return (summary, [])
+        }
+
+        let tags = parts[1]
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return (summary, tags)
     }
 
     private func activateDocument(_ document: ReaderDocument) {
@@ -604,6 +637,7 @@ final class AppModel {
         isHighlightToolEnabled = false
         savedHighlights = []
         autoSummary = nil
+        autoConceptTags = []
         summaryTask?.cancel()
 
         currentPageIndex = readingPositionsByDocument[positionKey(for: document)]

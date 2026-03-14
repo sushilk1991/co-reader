@@ -69,7 +69,7 @@ struct ReaderHighlightsPanel: View {
                             }
                             .padding(14)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 16))
+                            .background(ReaderTheme.paper, in: RoundedRectangle(cornerRadius: 16))
                         }
                     }
                 }

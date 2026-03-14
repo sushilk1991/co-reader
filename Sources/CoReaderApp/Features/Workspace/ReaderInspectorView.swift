@@ -16,6 +16,7 @@ struct ReaderInspectorView: View {
                 Text("Notes").tag(InspectorTab.notes)
                 Text("Highlights").tag(InspectorTab.highlights)
                 Text("Visuals").tag(InspectorTab.visuals)
+                Text("Map").tag(InspectorTab.knowledge)
             }
             .pickerStyle(.segmented)
             .padding(6)
@@ -31,6 +32,8 @@ struct ReaderInspectorView: View {
                     ReaderHighlightsPanel(appModel: appModel)
                 case .visuals:
                     ReaderVisualsPanel(appModel: appModel)
+                case .knowledge:
+                    KnowledgeMapPanel(appModel: appModel)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
