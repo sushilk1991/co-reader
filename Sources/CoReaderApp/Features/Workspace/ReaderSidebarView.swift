@@ -68,6 +68,17 @@ struct ReaderSidebarView: View {
                         ProviderStatusCard(provider: provider)
                     }
                 }
+
+                if CoReaderPaths.isCloudSyncEnabled {
+                    HStack(spacing: 8) {
+                        Image(systemName: "icloud.fill")
+                            .foregroundStyle(ReaderTheme.teal)
+                        Text("iCloud Drive sync active")
+                            .foregroundStyle(ReaderTheme.smoke)
+                    }
+                    .font(.caption)
+                    .padding(.vertical, 8)
+                }
             }
             .padding(20)
         }

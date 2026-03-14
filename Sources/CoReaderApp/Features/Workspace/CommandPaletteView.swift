@@ -70,6 +70,24 @@ struct CommandPaletteView: View {
                             }
                         }
 
+                        if !appModel.autoConceptTags.isEmpty {
+                            paletteSection("Current Concepts") {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(appModel.autoConceptTags, id: \.self) { tag in
+                                            Text(tag)
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(ReaderTheme.teal)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(ReaderTheme.tealSoft, in: Capsule())
+                                        }
+                                    }
+                                    .padding(.horizontal, 12)
+                                }
+                            }
+                        }
+
                         if CoReaderPaths.isCloudSyncEnabled {
                             paletteSection("Status") {
                                 HStack(spacing: 8) {

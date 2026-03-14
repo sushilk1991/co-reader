@@ -103,6 +103,22 @@ struct ReaderToolbarView: View {
                 }
             }
 
+            Button {
+                appModel.isCommandPaletteVisible.toggle()
+            } label: {
+                Label("⌘K", systemImage: "command")
+            }
+            .buttonStyle(.plain)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(ReaderTheme.smoke)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(ReaderTheme.paper.opacity(0.94), in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+            )
+
             Label(appModel.providerReadinessLabel, systemImage: appModel.providerStatuses.contains(where: \.isAvailable) ? "bolt.circle.fill" : "bolt.slash")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(appModel.providerStatuses.contains(where: \.isAvailable) ? ReaderTheme.teal : ReaderTheme.rose)

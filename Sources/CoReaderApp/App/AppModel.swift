@@ -770,6 +770,21 @@ final class AppModel {
         return nil
     }
 
+    private func questionWithConversationContext(_ question: String) -> String {
+        let recent = chatTranscript.suffix(4)
+        guard !recent.isEmpty else { return question }
+
+        var lines: [String] = ["Previous conversation:"]
+        for msg in recent {
+            let role = msg.role == .user ? "User" : "Assistant"
+            lines.append("\(role): \(String(msg.content.prefix(250)))")
+        }
+        lines.append("")
+        lines.append("Follow-up question:")
+        lines.append(question)
+        return lines.joined(separator: "\n")
+    }
+
     private func submitQuestion(_ question: String, for document: ReaderDocument, scope: DocumentQueryScope, visualAsset: DocumentVisualAsset?) async {
         chatError = nil
         chatInput = ""
@@ -777,9 +792,11 @@ final class AppModel {
         chatTranscript.append(ChatMessage(role: .user, content: question))
         defer { isAskingQuestion = false }
 
+        let enrichedQuestion = chatTranscript.count > 1 ? questionWithConversationContext(question) : question
+
         do {
             let answer = try await documentAssistant.answer(
-                question: question,
+                question: enrichedQuestion,
                 for: document,
                 providerStatuses: providerStatuses,
                 scope: scope,
