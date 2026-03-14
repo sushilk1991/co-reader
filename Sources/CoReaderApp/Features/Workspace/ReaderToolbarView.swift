@@ -14,14 +14,18 @@ struct ReaderToolbarView: View {
             .buttonStyle(.bordered)
             .keyboardShortcut("l", modifiers: [.command, .option])
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(appModel.selectedDocument?.title ?? "Co-Reader")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(ReaderTheme.ink)
+            HStack(spacing: 12) {
+                BrandMarkView(size: 42)
 
-                Text(appModel.selectedDocument == nil ? "Reader-first local AI workspace" : "Read first. Ask only when needed.")
-                    .font(.caption)
-                    .foregroundStyle(ReaderTheme.slate)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(appModel.selectedDocument?.title ?? "CoReader")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(ReaderTheme.ink)
+
+                    Text(appModel.selectedDocument == nil ? "Reader-first local AI workspace" : "Read first. Ask only when needed.")
+                        .font(.caption)
+                        .foregroundStyle(ReaderTheme.slate)
+                }
             }
 
             Spacer()

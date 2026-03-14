@@ -7,6 +7,22 @@ struct ReaderSidebarView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 14) {
+                    BrandMarkView(size: 52)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("CoReader")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(ReaderTheme.ink)
+
+                        Text("AI-powered PDF and EPUB co-reader")
+                            .font(.subheadline)
+                            .foregroundStyle(ReaderTheme.slate)
+                    }
+                }
+
+                Divider()
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Library")
                         .font(.title3.weight(.semibold))

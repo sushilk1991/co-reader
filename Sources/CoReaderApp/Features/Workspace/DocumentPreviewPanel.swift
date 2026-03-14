@@ -81,6 +81,8 @@ struct DocumentPreviewPanel: View {
                 VStack(alignment: .leading, spacing: 20) {
                     Spacer()
 
+                    BrandMarkView(size: 88)
+
                     Label("Read First, Ask Second", systemImage: "book.pages")
                         .font(.title.weight(.bold))
                         .foregroundStyle(ReaderTheme.ink)

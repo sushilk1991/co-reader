@@ -16,6 +16,9 @@ let package = Package(
         .executableTarget(
             name: "CoReaderApp",
             path: "Sources/CoReaderApp",
+            resources: [
+                .process("Resources")
+            ],
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
                 .linkedFramework("PDFKit")
