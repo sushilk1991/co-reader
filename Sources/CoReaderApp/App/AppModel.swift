@@ -82,11 +82,7 @@ final class AppModel {
             return nil
         }
 
-        if selectedDocument?.kind == .epub {
-            return "Chapter \(currentPageIndex + 1)"
-        }
-
-        return "Page \(currentPageIndex + 1)"
+        return locationLabel(for: currentPageIndex)
     }
 
     var selectionSummary: String? {
@@ -254,6 +250,15 @@ final class AppModel {
         openInspector(tab: .highlights)
     }
 
+    func locationLabel(for index: Int) -> String {
+        switch selectedDocument?.kind {
+        case .epub:
+            "Chapter \(index + 1)"
+        default:
+            "Page \(index + 1)"
+        }
+    }
+
     func focusChat() {
         openInspector(tab: .ask)
     }
@@ -265,7 +270,7 @@ final class AppModel {
         }
 
         chatInput = """
-        Explain this selected passage from page \(selection.pageIndex + 1):
+        Explain this selected passage from \(locationLabel(for: selection.pageIndex).lowercased()):
 
         "\(selection.text)"
         """
@@ -335,7 +340,7 @@ final class AppModel {
         }
 
         return [
-            "Saved from page \(selection.pageIndex + 1).",
+            "Saved from \(locationLabel(for: selection.pageIndex).lowercased()).",
             selection.surroundingText
         ]
     }

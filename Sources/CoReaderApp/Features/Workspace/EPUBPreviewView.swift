@@ -93,8 +93,12 @@ struct EPUBPreviewView: View {
             }
 
             EPUBSectionWebView(
+                chapterIndex: currentSectionIndex,
                 sectionURL: book.sections[currentSectionIndex].contentURL,
                 readAccessURL: book.rootURL,
+                onSelectionChange: { selection in
+                    onSelectionChange(selection)
+                },
                 onNavigateToSectionURL: { navigatedURL in
                     guard let sectionIndex = book.sectionIndex(for: navigatedURL),
                           sectionIndex != currentSectionIndex else {
@@ -142,16 +146,25 @@ struct EPUBPreviewView: View {
 }
 
 private struct EPUBSectionWebView: NSViewRepresentable {
+    let chapterIndex: Int
     let sectionURL: URL
     let readAccessURL: URL
+    let onSelectionChange: @MainActor (DocumentSelection?) -> Void
     let onNavigateToSectionURL: @MainActor (URL) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onNavigateToSectionURL: onNavigateToSectionURL)
+        Coordinator(
+            chapterIndex: chapterIndex,
+            onSelectionChange: onSelectionChange,
+            onNavigateToSectionURL: onNavigateToSectionURL
+        )
     }
 
     func makeNSView(context: Context) -> WKWebView {
+        let userContentController = WKUserContentController()
+        context.coordinator.configure(userContentController: userContentController)
         let configuration = WKWebViewConfiguration()
+        configuration.userContentController = userContentController
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.setValue(false, forKey: "drawsBackground")
         webView.allowsMagnification = true
@@ -161,16 +174,40 @@ private struct EPUBSectionWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
+        context.coordinator.chapterIndex = chapterIndex
         context.coordinator.updateIfNeeded(webView: nsView, sectionURL: sectionURL, readAccessURL: readAccessURL)
     }
 
     @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        var chapterIndex: Int
         private var loadedSectionURL: URL?
+        private weak var userContentController: WKUserContentController?
+        private let onSelectionChange: @MainActor (DocumentSelection?) -> Void
         private let onNavigateToSectionURL: @MainActor (URL) -> Void
 
-        init(onNavigateToSectionURL: @escaping @MainActor (URL) -> Void) {
+        init(
+            chapterIndex: Int,
+            onSelectionChange: @escaping @MainActor (DocumentSelection?) -> Void,
+            onNavigateToSectionURL: @escaping @MainActor (URL) -> Void
+        ) {
+            self.chapterIndex = chapterIndex
+            self.onSelectionChange = onSelectionChange
             self.onNavigateToSectionURL = onNavigateToSectionURL
+        }
+
+        func configure(userContentController: WKUserContentController) {
+            self.userContentController?.removeScriptMessageHandler(forName: Self.selectionHandlerName)
+            self.userContentController = userContentController
+            userContentController.removeAllUserScripts()
+            userContentController.addUserScript(
+                WKUserScript(
+                    source: Self.selectionScript,
+                    injectionTime: .atDocumentEnd,
+                    forMainFrameOnly: true
+                )
+            )
+            userContentController.add(self, name: Self.selectionHandlerName)
         }
 
         func updateIfNeeded(webView: WKWebView, sectionURL: URL, readAccessURL: URL) {
@@ -180,6 +217,7 @@ private struct EPUBSectionWebView: NSViewRepresentable {
             }
 
             loadedSectionURL = normalizedURL
+            onSelectionChange(nil)
             webView.loadFileURL(normalizedURL, allowingReadAccessTo: readAccessURL)
         }
 
@@ -193,5 +231,56 @@ private struct EPUBSectionWebView: NSViewRepresentable {
                 onNavigateToSectionURL(currentURL)
             }
         }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == Self.selectionHandlerName else {
+                return
+            }
+
+            let selection = EPUBSelectionPayload.selection(
+                fromMessageBody: message.body,
+                chapterIndex: chapterIndex
+            )
+            Task { @MainActor in
+                onSelectionChange(selection)
+            }
+        }
+
+        private static let selectionHandlerName = "coreaderSelection"
+        private static let selectionScript = """
+        (() => {
+          const handler = window.webkit?.messageHandlers?.\(selectionHandlerName);
+          if (!handler) {
+            return;
+          }
+
+          const normalize = (value) => (value || "").replace(/\\s+/g, " ").trim();
+          const nearestContainer = (node) => {
+            if (!node) {
+              return document.body;
+            }
+
+            const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+            return element?.closest("p, li, blockquote, h1, h2, h3, h4, h5, h6, section, article, div") || document.body;
+          };
+
+          const publishSelection = () => {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+              handler.postMessage({ text: "", surroundingText: "" });
+              return;
+            }
+
+            const range = selection.getRangeAt(0);
+            const text = normalize(selection.toString());
+            const surroundingText = normalize(nearestContainer(range.commonAncestorContainer).innerText || document.body.innerText || "");
+            handler.postMessage({ text, surroundingText });
+          };
+
+          document.addEventListener("selectionchange", publishSelection);
+          window.addEventListener("mouseup", publishSelection);
+          window.addEventListener("keyup", publishSelection);
+        })();
+        """
     }
 }

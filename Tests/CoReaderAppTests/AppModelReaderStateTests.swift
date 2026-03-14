@@ -109,6 +109,29 @@ struct AppModelReaderStateTests {
     }
 
     @Test
+    func epubHighlightUsesChapterCopyInSavedMetadata() throws {
+        let noteStore = StubNoteStore()
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: noteStore
+        )
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Distributed Reading.epub"))
+        appModel.updateCurrentSelection(
+            DocumentSelection(
+                text: "Quorum writes trade latency for stronger durability guarantees.",
+                pageIndex: 1,
+                surroundingText: "The chapter explains why quorum systems improve durability."
+            )
+        )
+
+        try appModel.saveQuickHighlight()
+
+        #expect(noteStore.savedNotes.count == 1)
+        #expect(noteStore.savedNotes[0].bulletPoints.first == "Saved from chapter 2.")
+    }
+
+    @Test
     func selectingDifferentDocumentResetsReaderSessionAndScopesNotes() throws {
         let noteStore = StubNoteStore()
         let appModel = AppModel(

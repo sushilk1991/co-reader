@@ -20,7 +20,7 @@ struct ReaderHighlightsPanel: View {
                 ContentUnavailableView(
                     "No highlights yet",
                     systemImage: "highlighter",
-                    description: Text("Select text in the PDF, then save a highlight from the floating action bar.")
+                    description: Text("Select text in the document, then save a highlight from the floating action bar.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -33,7 +33,7 @@ struct ReaderHighlightsPanel: View {
                                         .font(.headline)
                                         .foregroundStyle(ReaderTheme.ink)
                                     Spacer()
-                                    Text("Page \(highlight.pageIndex + 1)")
+                                    Text(appModel.locationLabel(for: highlight.pageIndex))
                                         .font(.caption.weight(.medium))
                                         .foregroundStyle(ReaderTheme.brass)
                                 }
