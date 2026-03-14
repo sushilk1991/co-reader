@@ -3,6 +3,7 @@ protocol DocumentAssisting: Sendable {
         question: String,
         for document: ReaderDocument,
         providerStatuses: [AIProviderStatus],
+        scope: DocumentQueryScope,
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int],

@@ -31,6 +31,7 @@ struct EPUBDocumentContextExtractorTests {
         let context = try extractor.extractContext(
             for: ReaderDocument(fileURL: URL(fileURLWithPath: "/tmp/Distributed Reading.epub")),
             question: "How do quorum writes affect durability?",
+            scope: .focus,
             selection: nil,
             currentPageIndex: 1,
             visiblePageIndexes: []

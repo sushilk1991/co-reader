@@ -12,6 +12,7 @@ struct LiveDocumentContextExtractor: DocumentContextExtracting {
     func extractContext(
         for document: ReaderDocument,
         question: String,
+        scope: DocumentQueryScope,
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int]
@@ -22,6 +23,7 @@ struct LiveDocumentContextExtractor: DocumentContextExtracting {
             return composer.compose(
                 title: document.title,
                 question: question,
+                scope: scope,
                 selection: selection,
                 currentPageIndex: currentPageIndex,
                 visiblePageIndexes: visiblePageIndexes,
@@ -32,6 +34,7 @@ struct LiveDocumentContextExtractor: DocumentContextExtracting {
             return composer.compose(
                 title: book.title,
                 question: question,
+                scope: scope,
                 selection: selection,
                 currentPageIndex: currentPageIndex,
                 visiblePageIndexes: visiblePageIndexes,

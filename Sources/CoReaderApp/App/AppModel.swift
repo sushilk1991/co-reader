@@ -22,6 +22,7 @@ final class AppModel {
     var providerStatuses: [AIProviderStatus] = []
     var selectedDocument: ReaderDocument?
     var selectedInspectorTab: InspectorTab = .ask
+    var queryScope: DocumentQueryScope = .focus
     var currentSelection: DocumentSelection?
     var currentPageIndex: Int?
     var visiblePageIndexes: [Int] = []
@@ -63,6 +64,14 @@ final class AppModel {
 
     var hasActiveSelection: Bool {
         currentSelection != nil
+    }
+
+    var effectiveQueryScope: DocumentQueryScope {
+        if queryScope == .selection, currentSelection == nil {
+            return .focus
+        }
+
+        return queryScope
     }
 
     var providerReadinessLabel: String {
@@ -165,11 +174,23 @@ final class AppModel {
 
     func updateCurrentSelection(_ selection: DocumentSelection?) {
         currentSelection = selection
+        if selection == nil, queryScope == .selection {
+            queryScope = .focus
+        }
     }
 
     func updateReadingPosition(currentPageIndex: Int?, visiblePageIndexes: [Int] = []) {
         self.currentPageIndex = currentPageIndex
         self.visiblePageIndexes = visiblePageIndexes
+    }
+
+    func setQueryScope(_ scope: DocumentQueryScope) {
+        if scope == .selection, currentSelection == nil {
+            queryScope = .focus
+            return
+        }
+
+        queryScope = scope
     }
 
     func selectVisual(_ visual: DocumentVisualAsset) {
@@ -274,6 +295,7 @@ final class AppModel {
 
         "\(selection.text)"
         """
+        queryScope = .selection
         openInspector(tab: .ask)
         await askQuestion()
     }
@@ -289,7 +311,7 @@ final class AppModel {
             return
         }
 
-        await submitQuestion(question, for: document, visualAsset: nil)
+        await submitQuestion(question, for: document, scope: effectiveQueryScope, visualAsset: nil)
     }
 
     func runQuickAction(_ action: LearningAction) async {
@@ -303,13 +325,13 @@ final class AppModel {
             do {
                 let visual = try resolveVisualForExplanation(in: document)
                 openInspector(tab: .ask)
-                await submitQuestion(action.prompt(for: document), for: document, visualAsset: visual)
+                await submitQuestion(action.prompt(for: document, scope: effectiveQueryScope), for: document, scope: effectiveQueryScope, visualAsset: visual)
             } catch {
                 chatError = error.localizedDescription
                 chatTranscript.append(ChatMessage(role: .assistant, content: error.localizedDescription))
             }
         default:
-            chatInput = action.prompt(for: document)
+            chatInput = action.prompt(for: document, scope: effectiveQueryScope)
             await askQuestion()
         }
     }
@@ -378,6 +400,7 @@ final class AppModel {
         chatInput = ""
         chatError = nil
         chatTranscript = []
+        queryScope = .focus
         savedHighlights = []
 
         try? refreshSavedNotesForSelectedDocument()
@@ -479,7 +502,7 @@ final class AppModel {
         return nil
     }
 
-    private func submitQuestion(_ question: String, for document: ReaderDocument, visualAsset: DocumentVisualAsset?) async {
+    private func submitQuestion(_ question: String, for document: ReaderDocument, scope: DocumentQueryScope, visualAsset: DocumentVisualAsset?) async {
         chatError = nil
         chatInput = ""
         isAskingQuestion = true
@@ -491,6 +514,7 @@ final class AppModel {
                 question: question,
                 for: document,
                 providerStatuses: providerStatuses,
+                scope: scope,
                 selection: currentSelection,
                 currentPageIndex: currentPageIndex,
                 visiblePageIndexes: visiblePageIndexes,

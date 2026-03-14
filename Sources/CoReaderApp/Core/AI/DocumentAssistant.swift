@@ -17,6 +17,7 @@ struct DocumentAssistant: DocumentAssisting {
         question: String,
         for document: ReaderDocument,
         providerStatuses: [AIProviderStatus],
+        scope: DocumentQueryScope,
         selection: DocumentSelection? = nil,
         currentPageIndex: Int? = nil,
         visiblePageIndexes: [Int] = [],
@@ -25,11 +26,12 @@ struct DocumentAssistant: DocumentAssisting {
         let context = try extractor.extractContext(
             for: document,
             question: question,
+            scope: scope,
             selection: selection,
             currentPageIndex: currentPageIndex,
             visiblePageIndexes: visiblePageIndexes
         )
-        let prompt = buildPrompt(question: question, context: context, visualAsset: visualAsset)
+        let prompt = buildPrompt(question: question, scope: scope, context: context, visualAsset: visualAsset)
 
         switch preferredExecutionTarget(from: providerStatuses, requiresVision: visualAsset != nil) {
         case let .ollama(model):
@@ -43,13 +45,16 @@ struct DocumentAssistant: DocumentAssisting {
         }
     }
 
-    private func buildPrompt(question: String, context: DocumentContext, visualAsset: DocumentVisualAsset?) -> String {
+    private func buildPrompt(question: String, scope: DocumentQueryScope, context: DocumentContext, visualAsset: DocumentVisualAsset?) -> String {
         """
         You are Co-Reader, an AI study partner for dense technical documents.
         Answer using the provided document context first. If the excerpt is incomplete, say what is uncertain instead of inventing details.
 
         Document Title:
         \(context.title)
+
+        Requested Scope:
+        \(scope.contextHeading)
 
         Document Excerpt:
         \(context.excerpt)
@@ -63,6 +68,7 @@ struct DocumentAssistant: DocumentAssisting {
         Response Style:
         - Start with a direct answer.
         - Use short bullet points when they improve clarity.
+        - When multiple pages or chapters are included, synthesize only what the excerpts support.
         - Mention uncertainty explicitly if the excerpt is incomplete.
         """
     }

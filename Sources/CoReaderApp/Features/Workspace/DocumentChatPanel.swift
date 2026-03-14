@@ -11,7 +11,7 @@ struct DocumentChatPanel: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(ReaderTheme.ink)
 
-                Text("Use the current selection or visible pages, not the whole book blob.")
+                Text("Choose a grounded scope before you ask: selection, current focus, or a document sweep.")
                     .font(.subheadline)
                     .foregroundStyle(ReaderTheme.slate)
             }
@@ -28,6 +28,22 @@ struct DocumentChatPanel: View {
                         .tint(ReaderTheme.teal)
                     }
                 }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Scope")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(ReaderTheme.slate)
+
+                HStack(spacing: 8) {
+                    ForEach(DocumentQueryScope.allCases) { scope in
+                        scopeButton(scope)
+                    }
+                }
+
+                Text(appModel.effectiveQueryScope.detail)
+                    .font(.caption)
+                    .foregroundStyle(ReaderTheme.slate)
             }
 
             if appModel.chatTranscript.isEmpty {
@@ -67,5 +83,25 @@ struct DocumentChatPanel: View {
             .disabled(!appModel.canSubmitQuestion)
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func scopeButton(_ scope: DocumentQueryScope) -> some View {
+        let isDisabled = scope == .selection && !appModel.hasActiveSelection
+        let isSelected = appModel.effectiveQueryScope == scope && !isDisabled
+
+        return Button(scope.title) {
+            appModel.setQueryScope(scope)
+        }
+        .buttonStyle(.plain)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(isSelected ? Color.white : isDisabled ? ReaderTheme.slate.opacity(0.55) : ReaderTheme.ink)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(isSelected ? ReaderTheme.teal : ReaderTheme.chromeStrong.opacity(0.45), in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(isSelected ? ReaderTheme.teal : ReaderTheme.chromeStrong.opacity(0.8), lineWidth: 1)
+        )
+        .disabled(isDisabled)
     }
 }

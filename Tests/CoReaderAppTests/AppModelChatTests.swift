@@ -55,6 +55,22 @@ struct AppModelChatTests {
         #expect(appModel.chatTranscript[0].content.contains("Advanced Algorithms"))
         #expect(appModel.chatTranscript[1].content == "Quiz created.")
     }
+
+    @Test
+    func summarizeQuickActionAdaptsToDocumentScope() async throws {
+        let appModel = AppModel(documentAssistant: StubDocumentAssistant(result: "Summary created."))
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Distributed Systems.pdf"))
+        appModel.queryScope = .document
+
+        await appModel.runQuickAction(.summarize)
+
+        #expect(appModel.chatTranscript.count == 2)
+        #expect(appModel.chatTranscript[0].content.contains("whole document"))
+        #expect(appModel.chatTranscript[1].content == "Summary created.")
+    }
 }
 
 private struct StubDocumentAssistant: DocumentAssisting {
@@ -64,6 +80,7 @@ private struct StubDocumentAssistant: DocumentAssisting {
         question: String,
         for document: ReaderDocument,
         providerStatuses: [AIProviderStatus],
+        scope: DocumentQueryScope,
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int],

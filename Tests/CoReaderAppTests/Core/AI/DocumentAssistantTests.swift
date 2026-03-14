@@ -24,7 +24,8 @@ struct DocumentAssistantTests {
             providerStatuses: [
                 AIProviderStatus(kind: .ollama, isAvailable: true, detail: "Ollama ready", models: ["llama3.2"]),
                 AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "Claude ready", models: [])
-            ]
+            ],
+            scope: .focus
         )
 
         #expect(answer == "Ollama answer")
@@ -55,7 +56,8 @@ struct DocumentAssistantTests {
             providerStatuses: [
                 AIProviderStatus(kind: .ollama, isAvailable: false, detail: "offline", models: []),
                 AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "Claude ready", models: [])
-            ]
+            ],
+            scope: .focus
         )
 
         #expect(answer == "Claude answer")
@@ -89,6 +91,7 @@ struct DocumentAssistantTests {
             providerStatuses: [
                 AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
             ],
+            scope: .document,
             selection: selection,
             currentPageIndex: 12,
             visiblePageIndexes: [12, 13]
@@ -96,6 +99,7 @@ struct DocumentAssistantTests {
 
         let recordedCall = extractor.lastCall
         #expect(recordedCall?.question == "Summarize this section")
+        #expect(recordedCall?.scope == .document)
         #expect(recordedCall?.selection == selection)
         #expect(recordedCall?.currentPageIndex == 12)
         #expect(recordedCall?.visiblePageIndexes == [12, 13])
@@ -131,6 +135,7 @@ struct DocumentAssistantTests {
                 AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2", "llava:latest"]),
                 AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "ready", models: [])
             ],
+            scope: .focus,
             visualAsset: visual
         )
 
@@ -170,6 +175,7 @@ struct DocumentAssistantTests {
                     AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"]),
                     AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "ready", models: [])
                 ],
+                scope: .focus,
                 selection: nil,
                 currentPageIndex: nil,
                 visiblePageIndexes: [],
@@ -207,6 +213,7 @@ struct DocumentAssistantTests {
                 providerStatuses: [
                     AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "ready", models: [])
                 ],
+                scope: .focus,
                 selection: nil,
                 currentPageIndex: nil,
                 visiblePageIndexes: [],
@@ -222,6 +229,7 @@ private struct StubDocumentContextExtractor: DocumentContextExtracting {
     func extractContext(
         for document: ReaderDocument,
         question: String,
+        scope: DocumentQueryScope,
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int]
@@ -233,6 +241,7 @@ private struct StubDocumentContextExtractor: DocumentContextExtracting {
 private final class RecordingDocumentContextExtractor: @unchecked Sendable, DocumentContextExtracting {
     struct Call: Equatable {
         let question: String
+        let scope: DocumentQueryScope
         let selection: DocumentSelection?
         let currentPageIndex: Int?
         let visiblePageIndexes: [Int]
@@ -248,12 +257,14 @@ private final class RecordingDocumentContextExtractor: @unchecked Sendable, Docu
     func extractContext(
         for document: ReaderDocument,
         question: String,
+        scope: DocumentQueryScope,
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int]
     ) throws -> DocumentContext {
         lastCall = Call(
             question: question,
+            scope: scope,
             selection: selection,
             currentPageIndex: currentPageIndex,
             visiblePageIndexes: visiblePageIndexes
