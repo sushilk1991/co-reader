@@ -7,7 +7,8 @@ struct DocumentContextComposer {
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int],
-        pageTexts: [String]
+        pageTexts: [String],
+        unitLabel: String = "Page"
     ) -> DocumentContext {
         var sections: [String] = []
 
@@ -32,7 +33,7 @@ struct DocumentContextComposer {
         if !chosenChunks.isEmpty {
             sections.append(selection == nil ? "Relevant Sections" : "Reading Context")
             sections.append("")
-            sections.append(contentsOf: chosenChunks.flatMap(formattedLines(for:)))
+            sections.append(contentsOf: chosenChunks.flatMap { formattedLines(for: $0, unitLabel: unitLabel) })
         }
 
         if sections.isEmpty {
@@ -106,9 +107,9 @@ struct DocumentContextComposer {
             }
     }
 
-    private func formattedLines(for chunk: DocumentChunk) -> [String] {
+    private func formattedLines(for chunk: DocumentChunk, unitLabel: String) -> [String] {
         [
-            "[Page \(chunk.pageRange.lowerBound)]",
+            "[\(unitLabel) \(chunk.pageRange.lowerBound)]",
             String(chunk.text.prefix(1_600)),
             ""
         ]

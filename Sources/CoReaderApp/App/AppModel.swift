@@ -82,6 +82,10 @@ final class AppModel {
             return nil
         }
 
+        if selectedDocument?.kind == .epub {
+            return "Chapter \(currentPageIndex + 1)"
+        }
+
         return "Page \(currentPageIndex + 1)"
     }
 

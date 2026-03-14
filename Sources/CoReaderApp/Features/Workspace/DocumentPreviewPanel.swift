@@ -47,16 +47,23 @@ struct DocumentPreviewPanel: View {
                                     }
                                 )
                             case .epub:
-                                ContentUnavailableView(
-                                    "EPUB imported",
-                                    systemImage: "books.vertical",
-                                    description: Text("EPUB ingestion is ready, but native rendering is the next reader-engine checkpoint.")
+                                EPUBPreviewView(
+                                    fileURL: document.fileURL,
+                                    onSelectionChange: { selection in
+                                        appModel.updateCurrentSelection(selection)
+                                    },
+                                    onReadingPositionChange: { currentSectionIndex, visibleSectionIndexes in
+                                        appModel.updateReadingPosition(
+                                            currentPageIndex: currentSectionIndex,
+                                            visiblePageIndexes: visibleSectionIndexes
+                                        )
+                                    }
                                 )
                             case .unknown:
                                 ContentUnavailableView(
                                     "Unsupported document",
                                     systemImage: "questionmark.folder",
-                                    description: Text("This file was imported, but the current workspace only renders PDF previews.")
+                                    description: Text("This file was imported, but the current workspace can only render PDF and EPUB documents right now.")
                                 )
                             }
                         }

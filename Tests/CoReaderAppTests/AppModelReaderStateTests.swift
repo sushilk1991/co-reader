@@ -210,6 +210,20 @@ struct AppModelReaderStateTests {
     }
 
     @Test
+    func currentPageLabelUsesChapterCopyForEPUBDocuments() {
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore()
+        )
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Distributed Reading.epub"))
+        appModel.updateReadingPosition(currentPageIndex: 2)
+
+        #expect(appModel.currentPageLabel == "Chapter 3")
+    }
+
+    @Test
     func importingDocumentLoadsVisualsAndSelectsTheFirstOne() {
         let firstVisual = DocumentVisualAsset(
             id: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,

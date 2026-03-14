@@ -3,6 +3,11 @@ import PDFKit
 
 struct LiveDocumentContextExtractor: DocumentContextExtracting {
     private let composer = DocumentContextComposer()
+    private let epubLoader: any EPUBBookLoading
+
+    init(epubLoader: any EPUBBookLoading = LiveEPUBBookLoader()) {
+        self.epubLoader = epubLoader
+    }
 
     func extractContext(
         for document: ReaderDocument,
@@ -23,9 +28,15 @@ struct LiveDocumentContextExtractor: DocumentContextExtracting {
                 pageTexts: pageTexts
             )
         case .epub:
-            return DocumentContext(
-                title: document.title,
-                excerpt: "EPUB support is imported into the workspace. Full text extraction is the next document-engine checkpoint."
+            let book = try epubLoader.loadBook(from: document.fileURL)
+            return composer.compose(
+                title: book.title,
+                question: question,
+                selection: selection,
+                currentPageIndex: currentPageIndex,
+                visiblePageIndexes: visiblePageIndexes,
+                pageTexts: book.sections.map(\.textContent),
+                unitLabel: "Chapter"
             )
         case .unknown:
             return DocumentContext(
