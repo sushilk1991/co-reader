@@ -1,6 +1,7 @@
 enum AIProviderKind: String, CaseIterable, Identifiable, Sendable {
     case ollama
     case claudeCLI
+    case openAICompatible
 
     var id: String { rawValue }
 
@@ -10,6 +11,8 @@ enum AIProviderKind: String, CaseIterable, Identifiable, Sendable {
             "Ollama"
         case .claudeCLI:
             "Claude CLI"
+        case .openAICompatible:
+            "LM Studio"
         }
     }
 }

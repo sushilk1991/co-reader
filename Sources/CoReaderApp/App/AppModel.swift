@@ -12,7 +12,13 @@ final class AppModel {
     private let highlightStore: DocumentHighlightStoring
     private let visualExtractor: DocumentVisualExtracting
     private let visualExporter: DocumentVisualExporting
+    private let readingStateStore: ReadingStateStore?
     private var documentLibrary = DocumentLibrary()
+    private var readingPositionsByDocument: [String: Int] = [:]
+    private var readingStateSaveTask: Task<Void, Never>?
+    private var summarizedPageKeys: Set<String> = []
+    private var pageSummaries: [String: String] = [:]
+    private var summaryTask: Task<Void, Never>?
     private(set) var hasLoadedProviders = false
     var isDiscoveringProviders = false
     var isImportingDocument = false
@@ -36,6 +42,7 @@ final class AppModel {
     var savedHighlights: [ReaderHighlight] = []
     var savedNotes: [KnowledgeNoteSummary] = []
     var isCommandPaletteVisible = false
+    var autoSummary: String?
     var chatInput = ""
     var chatError: String?
     var chatTranscript: [ChatMessage] = []
@@ -47,7 +54,8 @@ final class AppModel {
         noteStore: KnowledgeNoteStoring? = nil,
         highlightStore: DocumentHighlightStoring? = nil,
         visualExtractor: DocumentVisualExtracting = LiveDocumentVisualExtractor(),
-        visualExporter: DocumentVisualExporting = LiveDocumentVisualExporter()
+        visualExporter: DocumentVisualExporting = LiveDocumentVisualExporter(),
+        readingStateStore: ReadingStateStore? = nil
     ) {
         self.providerDiscovery = providerDiscovery
         self.documentAssistant = documentAssistant
@@ -57,6 +65,11 @@ final class AppModel {
         self.knowledgeCapture = knowledgeCapture ?? systems.capture
         self.noteStore = noteStore ?? systems.noteStore
         self.highlightStore = highlightStore ?? AppModel.defaultHighlightStore()
+        self.readingStateStore = readingStateStore ?? AppModel.defaultReadingStateStore()
+
+        if let state = try? self.readingStateStore?.load() {
+            restoreFromReadingState(state)
+        }
     }
 
     var importedDocuments: [ReaderDocument] {
@@ -136,11 +149,11 @@ final class AppModel {
 
     var statusDetail: String {
         if isDiscoveringProviders {
-            return "Checking Ollama on localhost:11434 and looking for the claude CLI."
+            return "Checking Ollama, LM Studio, and the Claude CLI."
         }
 
         if hasLoadedProviders {
-            return "Use Ollama or Claude locally to ask document questions, explain figures, and generate code snippets."
+            return "Use Ollama, LM Studio, or Claude locally to ask document questions, explain figures, and generate code snippets."
         }
 
         return "The first provider scan starts automatically when the window opens."
@@ -161,6 +174,7 @@ final class AppModel {
     func importDocument(from url: URL) {
         let document = documentLibrary.importDocument(at: url)
         activateDocument(document)
+        scheduleReadingStateSave()
     }
 
     func selectDocument(_ document: ReaderDocument) {
@@ -208,6 +222,12 @@ final class AppModel {
     func updateReadingPosition(currentPageIndex: Int?, visiblePageIndexes: [Int] = []) {
         self.currentPageIndex = currentPageIndex
         self.visiblePageIndexes = visiblePageIndexes
+
+        if let selectedDocument, let currentPageIndex {
+            readingPositionsByDocument[positionKey(for: selectedDocument)] = currentPageIndex
+            scheduleReadingStateSave()
+            triggerAutoSummary(document: selectedDocument, pageIndex: currentPageIndex)
+        }
     }
 
     func setQueryScope(_ scope: DocumentQueryScope) {
@@ -476,11 +496,102 @@ final class AppModel {
         (try? LiveDocumentHighlightStore.liveDefault()) ?? NoOpDocumentHighlightStore()
     }
 
+    private static func defaultReadingStateStore() -> ReadingStateStore? {
+        try? ReadingStateStore.live()
+    }
+
+    private func restoreFromReadingState(_ state: ReadingState) {
+        for url in state.documentURLs {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            _ = documentLibrary.importDocument(at: url)
+        }
+
+        readingPositionsByDocument = state.positions
+
+        if let activeURL = state.activeDocumentURL,
+           let doc = documentLibrary.documents.first(where: { $0.fileURL == activeURL.standardizedFileURL }) {
+            activateDocument(doc)
+        }
+    }
+
+    private func positionKey(for document: ReaderDocument) -> String {
+        document.fileURL.standardizedFileURL.path
+    }
+
+    private func persistReadingState() {
+        guard let readingStateStore else { return }
+
+        if let selectedDocument, let currentPageIndex {
+            readingPositionsByDocument[positionKey(for: selectedDocument)] = currentPageIndex
+        }
+
+        let state = ReadingState(
+            documentURLs: documentLibrary.documents.map(\.fileURL),
+            activeDocumentURL: selectedDocument?.fileURL,
+            positions: readingPositionsByDocument
+        )
+        try? readingStateStore.save(state)
+    }
+
+    private func scheduleReadingStateSave() {
+        readingStateSaveTask?.cancel()
+        readingStateSaveTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            persistReadingState()
+        }
+    }
+
+    private func triggerAutoSummary(document: ReaderDocument, pageIndex: Int) {
+        let key = "\(document.id)-\(pageIndex)"
+
+        if let cached = pageSummaries[key] {
+            autoSummary = cached
+            return
+        }
+
+        guard !summarizedPageKeys.contains(key) else { return }
+
+        summaryTask?.cancel()
+        summaryTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            guard self.selectedDocument?.id == document.id,
+                  self.currentPageIndex == pageIndex else { return }
+            guard providerStatuses.contains(where: \.isAvailable) else { return }
+
+            do {
+                let answer = try await documentAssistant.answer(
+                    question: "Provide a concise 2-3 sentence summary of this section's key points.",
+                    for: document,
+                    providerStatuses: providerStatuses,
+                    scope: .focus,
+                    selection: nil,
+                    currentPageIndex: pageIndex,
+                    visiblePageIndexes: [pageIndex],
+                    visualAsset: nil
+                )
+                summarizedPageKeys.insert(key)
+                pageSummaries[key] = answer
+
+                if self.selectedDocument?.id == document.id,
+                   self.currentPageIndex == pageIndex {
+                    autoSummary = answer
+                }
+            } catch {
+                // Silent failure for background feature
+            }
+        }
+    }
+
     private func activateDocument(_ document: ReaderDocument) {
+        if let previousDoc = selectedDocument, let pos = currentPageIndex {
+            readingPositionsByDocument[positionKey(for: previousDoc)] = pos
+        }
+
         selectedDocument = document
         isLibraryVisible = false
         currentSelection = nil
-        currentPageIndex = nil
         visiblePageIndexes = []
         documentVisuals = []
         selectedVisual = nil
@@ -492,6 +603,10 @@ final class AppModel {
         queryScope = .focus
         isHighlightToolEnabled = false
         savedHighlights = []
+        autoSummary = nil
+        summaryTask?.cancel()
+
+        currentPageIndex = readingPositionsByDocument[positionKey(for: document)]
 
         try? refreshSavedNotesForSelectedDocument()
         try? refreshSavedHighlightsForSelectedDocument()

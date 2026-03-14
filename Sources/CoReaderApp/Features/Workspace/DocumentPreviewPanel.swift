@@ -102,10 +102,18 @@ struct DocumentPreviewPanel: View {
                                 .stroke(ReaderTheme.lineSoft, lineWidth: 1)
                         )
 
-                        if appModel.hasActiveSelection {
-                            SelectionActionBar(appModel: appModel)
-                                .padding(20)
+                        VStack(alignment: .leading, spacing: 12) {
+                            if let summary = appModel.autoSummary {
+                                PageSummaryCard(summary: summary)
+                                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                            }
+
+                            if appModel.hasActiveSelection {
+                                SelectionActionBar(appModel: appModel)
+                            }
                         }
+                        .padding(20)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: appModel.autoSummary != nil)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
