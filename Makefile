@@ -43,8 +43,12 @@ APP_PATH := $(BUILD_PRODUCTS)/$(APP_NAME).app
 
 PHONY_TARGETS := $(TARGET_PREFIX)help $(TARGET_PREFIX)diagnose $(TARGET_PREFIX)build \
 	$(TARGET_PREFIX)test $(TARGET_PREFIX)run $(TARGET_PREFIX)build-and-run \
-	$(TARGET_PREFIX)build-and-run-background $(TARGET_PREFIX)clean $(TARGET_PREFIX)agent-verify
+	$(TARGET_PREFIX)build-and-run-background $(TARGET_PREFIX)clean $(TARGET_PREFIX)agent-verify \
+	$(TARGET_PREFIX)dmg
 .PHONY: $(PHONY_TARGETS)
+
+DMG_VERSION ?= $(shell git rev-parse --short HEAD)
+DMG_OUTPUT ?= dist/$(APP_NAME)-$(DMG_VERSION).dmg
 
 $(TARGET_PREFIX)help:
 	@printf "%s\n" \
@@ -56,7 +60,8 @@ $(TARGET_PREFIX)help:
 		"  make $(TARGET_PREFIX)build-and-run            Build then run" \
 		"  make $(TARGET_PREFIX)build-and-run-background Build then run in background" \
 		"  make $(TARGET_PREFIX)clean                    Clean derived data + logs" \
-		"  make $(TARGET_PREFIX)agent-verify             Build and test"
+		"  make $(TARGET_PREFIX)agent-verify             Build and test" \
+		"  make $(TARGET_PREFIX)dmg                      Build a Release app and package a DMG"
 
 $(TARGET_PREFIX)diagnose:
 	@APP_PROJECT="$(PROJECT)" \
@@ -109,3 +114,11 @@ $(TARGET_PREFIX)clean:
 $(TARGET_PREFIX)agent-verify:
 	@$(MAKE) --no-print-directory $(TARGET_PREFIX)build
 	@$(MAKE) --no-print-directory $(TARGET_PREFIX)test
+
+$(TARGET_PREFIX)dmg:
+	@$(MAKE) --no-print-directory $(TARGET_PREFIX)build CONFIGURATION=Release
+	@mkdir -p dist
+	@$(SCRIPTS_DIR)/build_dmg.sh \
+		--app-path "$(DERIVED_BASE)/$(AGENT_NAME)/Build/Products/Release/$(APP_NAME).app" \
+		--output "$(DMG_OUTPUT)" \
+		--volume-name "$(APP_NAME)"
