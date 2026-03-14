@@ -9,6 +9,7 @@ final class AppModel {
     private let documentAssistant: DocumentAssisting
     private let knowledgeCapture: KnowledgeCapturing
     private let noteStore: KnowledgeNoteStoring?
+    private let highlightStore: DocumentHighlightStoring
     private let visualExtractor: DocumentVisualExtracting
     private let visualExporter: DocumentVisualExporting
     private var documentLibrary = DocumentLibrary()
@@ -23,11 +24,14 @@ final class AppModel {
     var selectedDocument: ReaderDocument?
     var selectedInspectorTab: InspectorTab = .ask
     var queryScope: DocumentQueryScope = .focus
+    var isHighlightToolEnabled = false
+    var selectedHighlightColor: ReaderHighlightColor = .yellow
     var currentSelection: DocumentSelection?
     var currentPageIndex: Int?
     var visiblePageIndexes: [Int] = []
     var documentVisuals: [DocumentVisualAsset] = []
     var selectedVisual: DocumentVisualAsset?
+    var pdfDocumentHighlights: [PDFDocumentHighlight] = []
     var noteDraft = ""
     var savedHighlights: [ReaderHighlight] = []
     var savedNotes: [KnowledgeNoteSummary] = []
@@ -40,6 +44,7 @@ final class AppModel {
         documentAssistant: DocumentAssisting = DocumentAssistant(),
         knowledgeCapture: KnowledgeCapturing? = nil,
         noteStore: KnowledgeNoteStoring? = nil,
+        highlightStore: DocumentHighlightStoring? = nil,
         visualExtractor: DocumentVisualExtracting = LiveDocumentVisualExtractor(),
         visualExporter: DocumentVisualExporting = LiveDocumentVisualExporter()
     ) {
@@ -50,6 +55,7 @@ final class AppModel {
         let systems = AppModel.defaultKnowledgeSystems()
         self.knowledgeCapture = knowledgeCapture ?? systems.capture
         self.noteStore = noteStore ?? systems.noteStore
+        self.highlightStore = highlightStore ?? AppModel.defaultHighlightStore()
     }
 
     var importedDocuments: [ReaderDocument] {
@@ -64,6 +70,10 @@ final class AppModel {
 
     var hasActiveSelection: Bool {
         currentSelection != nil
+    }
+
+    var supportsPersistentPDFHighlights: Bool {
+        selectedDocument?.kind == .pdf
     }
 
     var effectiveQueryScope: DocumentQueryScope {
@@ -160,6 +170,21 @@ final class AppModel {
         isLibraryVisible.toggle()
     }
 
+    func toggleHighlightTool() {
+        guard supportsPersistentPDFHighlights else {
+            return
+        }
+
+        isHighlightToolEnabled.toggle()
+        if isHighlightToolEnabled {
+            openInspector(tab: .highlights)
+        }
+    }
+
+    func setHighlightColor(_ color: ReaderHighlightColor) {
+        selectedHighlightColor = color
+    }
+
     func toggleInspector(preferredTab: InspectorTab? = nil) {
         isInspectorVisible.toggle()
         if let preferredTab {
@@ -196,6 +221,65 @@ final class AppModel {
     func selectVisual(_ visual: DocumentVisualAsset) {
         selectedVisual = visual
         openInspector(tab: .visuals)
+    }
+
+    func capturePDFHighlights(_ drafts: [PDFDocumentHighlightDraft]) {
+        guard let document = selectedDocument else {
+            return
+        }
+
+        do {
+            for draft in drafts {
+                let highlight = PDFDocumentHighlight(
+                    id: draft.id,
+                    pageIndex: draft.pageIndex,
+                    quotedText: draft.quotedText,
+                    noteText: nil,
+                    createdAt: Date(),
+                    color: draft.color,
+                    rects: draft.rects.map(PDFDocumentHighlight.HighlightRect.init(rect:))
+                )
+
+                try highlightStore.upsertHighlight(highlight, for: document)
+
+                let note = KnowledgeNote(
+                    id: draft.id,
+                    kind: .highlight,
+                    title: "\(document.title) Highlight",
+                    sourceIdentifier: document.fileURL.lastPathComponent,
+                    createdAt: highlight.createdAt,
+                    bulletPoints: [
+                        "Saved from \(locationLabel(for: draft.pageIndex).lowercased()).",
+                        draft.quotedText
+                    ],
+                    highlightExcerpt: draft.quotedText,
+                    pageIndex: draft.pageIndex,
+                    notePreview: nil
+                )
+                try noteStore?.save(note: note)
+            }
+
+            try refreshSavedNotesForSelectedDocument()
+            try refreshSavedHighlightsForSelectedDocument()
+            openInspector(tab: .highlights)
+        } catch {
+            chatError = error.localizedDescription
+        }
+    }
+
+    func deleteHighlight(_ highlightID: UUID) {
+        guard let document = selectedDocument else {
+            return
+        }
+
+        do {
+            try highlightStore.removeHighlight(id: highlightID, for: document)
+            try noteStore?.delete(noteID: highlightID)
+            try refreshSavedNotesForSelectedDocument()
+            try refreshSavedHighlightsForSelectedDocument()
+        } catch {
+            chatError = error.localizedDescription
+        }
     }
 
     func exportSelectedVisual() throws -> URL {
@@ -250,7 +334,6 @@ final class AppModel {
 
     func refreshSavedNotes(query: String = "") throws {
         savedNotes = try noteStore?.searchNotes(matching: query, limit: 20) ?? []
-        savedHighlights = savedNotes.compactMap(makeHighlight(from:))
     }
 
     func prepareSelectionNote() {
@@ -388,6 +471,10 @@ final class AppModel {
         return (ChatKnowledgeCapture(repository: repository), repository)
     }
 
+    private static func defaultHighlightStore() -> DocumentHighlightStoring {
+        (try? LiveDocumentHighlightStore.liveDefault()) ?? NoOpDocumentHighlightStore()
+    }
+
     private func activateDocument(_ document: ReaderDocument) {
         selectedDocument = document
         isLibraryVisible = false
@@ -396,20 +483,51 @@ final class AppModel {
         visiblePageIndexes = []
         documentVisuals = []
         selectedVisual = nil
+        pdfDocumentHighlights = []
         noteDraft = ""
         chatInput = ""
         chatError = nil
         chatTranscript = []
         queryScope = .focus
+        isHighlightToolEnabled = false
         savedHighlights = []
 
         try? refreshSavedNotesForSelectedDocument()
+        try? refreshSavedHighlightsForSelectedDocument()
         documentVisuals = (try? visualExtractor.extractVisuals(for: document)) ?? []
         selectedVisual = documentVisuals.first
     }
 
     private func refreshSavedNotesForSelectedDocument() throws {
         try refreshSavedNotes(query: selectedDocument?.fileURL.lastPathComponent ?? "")
+    }
+
+    private func refreshSavedHighlightsForSelectedDocument() throws {
+        guard let selectedDocument else {
+            savedHighlights = []
+            pdfDocumentHighlights = []
+            return
+        }
+
+        let storedHighlights = try highlightStore.loadHighlights(for: selectedDocument)
+        pdfDocumentHighlights = storedHighlights
+
+        let notePreviewByID = Dictionary(uniqueKeysWithValues: savedNotes.map { ($0.id, $0.notePreview) })
+        if storedHighlights.isEmpty {
+            savedHighlights = savedNotes.compactMap(makeHighlight(from:))
+        } else {
+            savedHighlights = storedHighlights.map { highlight in
+                ReaderHighlight(
+                    id: highlight.id,
+                    documentTitle: selectedDocument.title,
+                    pageIndex: highlight.pageIndex,
+                    quotedText: highlight.quotedText,
+                    noteText: notePreviewByID[highlight.id] ?? highlight.noteText,
+                    createdAt: highlight.createdAt,
+                    color: highlight.color
+                )
+            }
+        }
     }
 
     private func makeHighlight(from summary: KnowledgeNoteSummary) -> ReaderHighlight? {

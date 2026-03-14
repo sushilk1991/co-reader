@@ -8,24 +8,43 @@ struct DocumentPreviewPanel: View {
         Group {
             if let document = appModel.selectedDocument {
                 VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(document.title)
-                            .font(.title.weight(.bold))
-                            .foregroundStyle(ReaderTheme.ink)
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(document.title)
+                                .font(.system(size: 31, weight: .bold, design: .rounded))
+                                .foregroundStyle(ReaderTheme.ink)
 
-                        HStack(spacing: 12) {
-                            Text(document.fileURL.path)
+                            Text(document.fileURL.lastPathComponent)
                                 .font(.caption)
-                                .foregroundStyle(ReaderTheme.slate)
+                                .foregroundStyle(ReaderTheme.smoke)
                                 .textSelection(.enabled)
+                        }
+
+                        Spacer()
+
+                        HStack(spacing: 10) {
+                            Text(document.kind.displayName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(ReaderTheme.teal)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(ReaderTheme.tealSoft, in: Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+                                )
 
                             if let currentPageLabel = appModel.currentPageLabel {
                                 Text(currentPageLabel)
-                                    .font(.caption.weight(.medium))
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(ReaderTheme.brass)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(ReaderTheme.canvas.opacity(0.9), in: Capsule())
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(ReaderTheme.brassSoft, in: Capsule())
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+                                    )
                             }
                         }
                     }
@@ -36,6 +55,9 @@ struct DocumentPreviewPanel: View {
                             case .pdf:
                                 PDFPreviewView(
                                     fileURL: document.fileURL,
+                                    highlights: appModel.pdfDocumentHighlights,
+                                    isHighlightToolEnabled: appModel.isHighlightToolEnabled,
+                                    selectedHighlightColor: appModel.selectedHighlightColor,
                                     onSelectionChange: { selection in
                                         appModel.updateCurrentSelection(selection)
                                     },
@@ -44,6 +66,12 @@ struct DocumentPreviewPanel: View {
                                             currentPageIndex: currentPageIndex,
                                             visiblePageIndexes: visiblePageIndexes
                                         )
+                                    },
+                                    onHighlightCapture: { drafts in
+                                        appModel.capturePDFHighlights(drafts)
+                                    },
+                                    onHighlightRemoval: { highlightID in
+                                        appModel.deleteHighlight(highlightID)
                                     }
                                 )
                             case .epub:
@@ -68,7 +96,11 @@ struct DocumentPreviewPanel: View {
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.white.opacity(0.96), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .background(ReaderTheme.paper, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+                        )
 
                         if appModel.hasActiveSelection {
                             SelectionActionBar(appModel: appModel)
@@ -77,6 +109,13 @@ struct DocumentPreviewPanel: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .padding(22)
+                .background(ReaderTheme.paperGradient, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+                )
+                .shadow(color: ReaderTheme.shadow.opacity(0.8), radius: 24, y: 12)
             } else {
                 VStack(alignment: .leading, spacing: 20) {
                     Spacer()
@@ -101,16 +140,16 @@ struct DocumentPreviewPanel: View {
                 .padding(40)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .background(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.92), ReaderTheme.canvas.opacity(0.92)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
+                    ReaderTheme.paperGradient,
                     in: RoundedRectangle(cornerRadius: 32, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .stroke(ReaderTheme.lineSoft, lineWidth: 1)
                 )
             }
         }
-        .padding(8)
+        .padding(4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

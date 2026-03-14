@@ -21,4 +21,9 @@ struct KnowledgeRepository {
     func searchNotes(matching query: String, limit: Int = 20) throws -> [KnowledgeNoteSummary] {
         try index.search(matching: query, limit: limit)
     }
+
+    func delete(noteID: UUID) throws {
+        try markdownStore.delete(noteID: noteID)
+        try index.delete(noteID: noteID)
+    }
 }

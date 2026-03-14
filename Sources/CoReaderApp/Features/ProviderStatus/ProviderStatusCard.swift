@@ -32,7 +32,11 @@ struct ProviderStatusCard: View {
                                 .foregroundStyle(ReaderTheme.ink)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(ReaderTheme.canvas.opacity(0.85), in: Capsule())
+                                .background(ReaderTheme.paper.opacity(0.94), in: Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+                                )
                         }
                     }
                 }
@@ -40,6 +44,10 @@ struct ProviderStatusCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 18))
+        .background(ReaderTheme.paper.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+        )
     }
 }

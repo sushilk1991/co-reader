@@ -132,6 +132,72 @@ struct AppModelReaderStateTests {
     }
 
     @Test
+    func capturePDFHighlightsPersistsGeometryColorAndNoteMetadata() throws {
+        let noteStore = StubNoteStore()
+        let highlightStore = StubDocumentHighlightStore()
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: noteStore,
+            highlightStore: highlightStore
+        )
+        let documentURL = URL(fileURLWithPath: "/tmp/Agentic Reader.pdf")
+        appModel.importDocument(from: documentURL)
+
+        let draft = PDFDocumentHighlightDraft(
+            id: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
+            pageIndex: 3,
+            quotedText: "Agent loops need bounded memory and clear tool contracts.",
+            color: .mint,
+            rects: [
+                CGRect(x: 40, y: 500, width: 180, height: 18),
+                CGRect(x: 40, y: 478, width: 140, height: 18)
+            ]
+        )
+
+        appModel.capturePDFHighlights([draft])
+
+        #expect(appModel.savedHighlights.count == 1)
+        #expect(appModel.savedHighlights[0].color == .mint)
+        #expect(appModel.savedHighlights[0].quotedText == draft.quotedText)
+        #expect(appModel.pdfDocumentHighlights.count == 1)
+        #expect(appModel.pdfDocumentHighlights[0].rects.count == 2)
+        #expect(noteStore.savedNotes.count == 1)
+        #expect(noteStore.savedNotes[0].id == draft.id)
+        #expect(try highlightStore.loadHighlights(for: ReaderDocument(fileURL: documentURL)).count == 1)
+    }
+
+    @Test
+    func deleteHighlightRemovesStoredGeometryAndKnowledgeEntry() throws {
+        let noteStore = StubNoteStore()
+        let highlightStore = StubDocumentHighlightStore()
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: noteStore,
+            highlightStore: highlightStore
+        )
+        let documentURL = URL(fileURLWithPath: "/tmp/Deletable Highlight.pdf")
+        appModel.importDocument(from: documentURL)
+
+        let draft = PDFDocumentHighlightDraft(
+            id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            pageIndex: 0,
+            quotedText: "Delete me when the highlight is no longer useful.",
+            color: .yellow,
+            rects: [CGRect(x: 32, y: 412, width: 220, height: 18)]
+        )
+
+        appModel.capturePDFHighlights([draft])
+        appModel.deleteHighlight(draft.id)
+
+        #expect(appModel.savedHighlights.isEmpty)
+        #expect(appModel.pdfDocumentHighlights.isEmpty)
+        #expect(noteStore.savedNotes.isEmpty)
+        #expect(try highlightStore.loadHighlights(for: ReaderDocument(fileURL: documentURL)).isEmpty)
+    }
+
+    @Test
     func selectingDifferentDocumentResetsReaderSessionAndScopesNotes() throws {
         let noteStore = StubNoteStore()
         let appModel = AppModel(
@@ -466,6 +532,10 @@ private final class StubNoteStore: KnowledgeNoteStoring {
             )
         }
     }
+
+    func delete(noteID: UUID) throws {
+        savedNotes.removeAll { $0.id == noteID }
+    }
 }
 
 private struct StubDocumentAssistant: DocumentAssisting {
@@ -505,6 +575,29 @@ private struct StubVisualExtractor: DocumentVisualExtracting {
 
     func renderPageSnapshot(for document: ReaderDocument, pageIndex: Int) throws -> DocumentVisualAsset? {
         renderedSnapshot ?? visuals.first { $0.pageIndex == pageIndex }
+    }
+}
+
+@MainActor
+private final class StubDocumentHighlightStore: DocumentHighlightStoring {
+    private(set) var storedHighlights: [String: [PDFDocumentHighlight]] = [:]
+
+    func loadHighlights(for document: ReaderDocument) throws -> [PDFDocumentHighlight] {
+        storedHighlights[document.fileURL.path] ?? []
+    }
+
+    func upsertHighlight(_ highlight: PDFDocumentHighlight, for document: ReaderDocument) throws {
+        var highlights = storedHighlights[document.fileURL.path] ?? []
+        if let index = highlights.firstIndex(where: { $0.id == highlight.id }) {
+            highlights[index] = highlight
+        } else {
+            highlights.insert(highlight, at: 0)
+        }
+        storedHighlights[document.fileURL.path] = highlights
+    }
+
+    func removeHighlight(id: UUID, for document: ReaderDocument) throws {
+        storedHighlights[document.fileURL.path] = (storedHighlights[document.fileURL.path] ?? []).filter { $0.id != id }
     }
 }
 

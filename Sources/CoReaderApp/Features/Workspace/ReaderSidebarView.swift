@@ -12,16 +12,18 @@ struct ReaderSidebarView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("CoReader")
-                            .font(.title2.weight(.bold))
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundStyle(ReaderTheme.ink)
 
                         Text("AI-powered PDF and EPUB co-reader")
                             .font(.subheadline)
-                            .foregroundStyle(ReaderTheme.slate)
+                            .foregroundStyle(ReaderTheme.smoke)
                     }
                 }
 
-                Divider()
+                Rectangle()
+                    .fill(ReaderTheme.lineSoft)
+                    .frame(height: 1)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Library")
@@ -36,6 +38,7 @@ struct ReaderSidebarView: View {
                 Button("Import PDF or EPUB", systemImage: "plus.rectangle.on.folder", action: appModel.beginDocumentImport)
                     .buttonStyle(.borderedProminent)
                     .tint(ReaderTheme.teal)
+                    .controlSize(.large)
 
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(appModel.importedDocuments) { document in
@@ -68,11 +71,12 @@ struct ReaderSidebarView: View {
             }
             .padding(20)
         }
-        .frame(width: 310)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .frame(width: 300)
+        .background(ReaderTheme.panelGradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(ReaderTheme.chromeStrong.opacity(0.7), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
         )
+        .shadow(color: ReaderTheme.shadow, radius: 18, y: 8)
     }
 }

@@ -15,6 +15,19 @@ struct MarkdownKnowledgeStore {
         baseDirectory.appending(path: "\(note.id.uuidString.lowercased())-\(slug(from: note.title)).md")
     }
 
+    func delete(noteID: UUID) throws {
+        try FileManager.default.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+        let prefix = noteID.uuidString.lowercased()
+        let candidateFiles = try FileManager.default.contentsOfDirectory(
+            at: baseDirectory,
+            includingPropertiesForKeys: nil
+        )
+
+        for fileURL in candidateFiles where fileURL.lastPathComponent.hasPrefix(prefix) {
+            try FileManager.default.removeItem(at: fileURL)
+        }
+    }
+
     private func markdown(for note: KnowledgeNote) -> String {
         var lines = [
             "# \(note.title)",

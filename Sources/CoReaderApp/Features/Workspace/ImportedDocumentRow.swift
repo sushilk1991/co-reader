@@ -28,15 +28,19 @@ struct ImportedDocumentRow: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? ReaderTheme.teal.opacity(0.28) : ReaderTheme.lineSoft, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
 
     private var backgroundStyle: some ShapeStyle {
         if isSelected {
-            return AnyShapeStyle(ReaderTheme.teal.opacity(0.12))
+            return AnyShapeStyle(ReaderTheme.tealSoft)
         }
 
-        return AnyShapeStyle(Color.white.opacity(0.7))
+        return AnyShapeStyle(ReaderTheme.paper.opacity(0.88))
     }
 }

@@ -5,32 +5,44 @@ import SwiftUI
 struct ReaderVisualsPanel: View {
     @Bindable var appModel: AppModel
     @State private var actionStatus: VisualActionStatus?
+    @State private var expandedVisualIDs: Set<UUID> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Visuals")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(ReaderTheme.ink)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
 
-                Text("Extracted figures, snapshots, and diagram actions for the current reading context.")
-                    .font(.subheadline)
-                    .foregroundStyle(ReaderTheme.slate)
-            }
-
-            if let selectedVisual {
-                ScrollView {
-                    selectedVisualContent(for: selectedVisual)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 8)
+                if let selectedVisual {
+                    selectedVisualSection(for: selectedVisual)
+                } else {
+                    emptyState
                 }
-            } else {
-                emptyState
+
+                if !appModel.documentVisuals.isEmpty {
+                    extractedVisualsSection
+                }
             }
+            .padding(.bottom, 10)
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            expandSelectedVisualIfNeeded()
+        }
         .onChange(of: appModel.selectedVisual?.id) { _, _ in
             actionStatus = nil
+            expandSelectedVisualIfNeeded()
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Visuals")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(ReaderTheme.ink)
+
+            Text("Extracted figures and fallback page snapshots stay in one vertical browser, so you can inspect, explain, and export without sideways hunting.")
+                .font(.subheadline)
+                .foregroundStyle(ReaderTheme.smoke)
         }
     }
 
@@ -52,93 +64,134 @@ struct ReaderVisualsPanel: View {
         hasVisionModel && (selectedVisual != nil || appModel.currentPageIndex != nil)
     }
 
-    @ViewBuilder
-    private func selectedVisualContent(for visual: DocumentVisualAsset) -> some View {
-        visualPreviewCard(for: visual)
-
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                Label("Page \(visual.pageIndex + 1)", systemImage: "doc.text.image")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(ReaderTheme.ink)
-
-                Text(kindLabel(for: visual))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(ReaderTheme.brass)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(ReaderTheme.canvas.opacity(0.92), in: Capsule())
-
-                Spacer()
-            }
-
-            Text("\(visual.pixelWidth) × \(visual.pixelHeight) px")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(ReaderTheme.ink)
-
-            Text(visual.suggestedFilename)
-                .font(.caption)
-                .foregroundStyle(ReaderTheme.slate)
-                .textSelection(.enabled)
-                .lineLimit(2)
-        }
-
-        visionStatusCard
-
-        HStack(spacing: 10) {
-            Button("Explain Diagram", systemImage: "sparkles") {
-                Task {
-                    await appModel.runQuickAction(.explainVisuals)
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(ReaderTheme.teal)
-            .disabled(!canExplainVisuals)
-
-            Button("Save PNG", systemImage: "square.and.arrow.down") {
-                exportSelectedVisual(revealInFinder: false)
-            }
-            .buttonStyle(.bordered)
-            .tint(ReaderTheme.brass)
-
-            Button("Reveal", systemImage: "folder") {
-                exportSelectedVisual(revealInFinder: true)
-            }
-            .buttonStyle(.bordered)
-        }
-
-        if let actionStatus {
-            Label(actionStatus.message, systemImage: actionStatus.systemImage)
-                .font(.caption)
-                .foregroundStyle(actionStatus.tint)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(actionStatus.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Extracted from this document")
+    private func selectedVisualSection(for visual: DocumentVisualAsset) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Selected Visual")
                     .font(.headline)
                     .foregroundStyle(ReaderTheme.ink)
 
                 Spacer()
 
-                Text("\(appModel.documentVisuals.count) visual\(appModel.documentVisuals.count == 1 ? "" : "s")")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(ReaderTheme.slate)
+                metadataPill(kindLabel(for: visual), tint: ReaderTheme.brass, background: ReaderTheme.brassSoft)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
-                    ForEach(appModel.documentVisuals) { candidate in
-                        visualThumbnail(candidate)
-                    }
-                }
-                .padding(.vertical, 2)
+            visualPreviewCard(for: visual, height: 224)
+
+            HStack(alignment: .top, spacing: 10) {
+                Label("Page \(visual.pageIndex + 1)", systemImage: "doc.text.image")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(ReaderTheme.ink)
+
+                Text("\(visual.pixelWidth) × \(visual.pixelHeight) px")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(ReaderTheme.smoke)
+
+                Spacer()
+            }
+
+            Text(visual.suggestedFilename)
+                .font(.caption)
+                .foregroundStyle(ReaderTheme.smoke)
+                .textSelection(.enabled)
+                .lineLimit(2)
+
+            visionStatusCard
+            actionButtons(for: visual)
+
+            if let actionStatus {
+                Label(actionStatus.message, systemImage: actionStatus.systemImage)
+                    .font(.caption)
+                    .foregroundStyle(actionStatus.tint)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(actionStatus.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
+        .padding(18)
+        .background(ReaderTheme.paperGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+        )
+    }
+
+    private var extractedVisualsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Extracted Visuals")
+                    .font(.headline)
+                    .foregroundStyle(ReaderTheme.ink)
+
+                Spacer()
+
+                Text("\(appModel.documentVisuals.count) item\(appModel.documentVisuals.count == 1 ? "" : "s")")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(ReaderTheme.smoke)
+            }
+
+            LazyVStack(spacing: 10) {
+                ForEach(appModel.documentVisuals) { visual in
+                    DisclosureGroup(isExpanded: expansionBinding(for: visual.id)) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            visualPreviewCard(for: visual, height: 172)
+
+                            HStack(spacing: 8) {
+                                metadataPill("Page \(visual.pageIndex + 1)", tint: ReaderTheme.ink, background: ReaderTheme.canvas)
+                                metadataPill(kindLabel(for: visual), tint: ReaderTheme.brass, background: ReaderTheme.brassSoft)
+                                Spacer()
+                                Text("\(visual.pixelWidth) × \(visual.pixelHeight)")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(ReaderTheme.smoke)
+                            }
+
+                            HStack(spacing: 8) {
+                                Button("Use This", systemImage: "checkmark.circle") {
+                                    appModel.selectVisual(visual)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(ReaderTheme.teal)
+
+                                Button("Explain", systemImage: "sparkles") {
+                                    selectAndExplain(visual)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(ReaderTheme.teal)
+                                .disabled(!hasVisionModel)
+
+                                Button("Save", systemImage: "square.and.arrow.down") {
+                                    exportVisual(visual, revealInFinder: false)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(ReaderTheme.brass)
+                            }
+                        }
+                        .padding(.top, 12)
+                    } label: {
+                        visualRowHeader(for: visual)
+                    }
+                    .padding(14)
+                    .background(
+                        appModel.selectedVisual?.id == visual.id ? ReaderTheme.tealSoft : ReaderTheme.paper.opacity(0.94),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(
+                                appModel.selectedVisual?.id == visual.id ? ReaderTheme.teal.opacity(0.45) : ReaderTheme.lineSoft,
+                                lineWidth: 1
+                            )
+                    )
+                }
+            }
+        }
+        .padding(18)
+        .background(ReaderTheme.panelGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+        )
     }
 
     private var visionStatusCard: some View {
@@ -158,14 +211,14 @@ struct ReaderVisualsPanel: View {
                         : "Install a local Ollama vision model such as Llava, Gemma 3, or Qwen2-VL to explain diagrams."
                 )
                 .font(.subheadline)
-                .foregroundStyle(ReaderTheme.slate)
+                .foregroundStyle(ReaderTheme.smoke)
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            hasVisionModel ? ReaderTheme.teal.opacity(0.10) : ReaderTheme.rose.opacity(0.10),
+            hasVisionModel ? ReaderTheme.tealSoft : ReaderTheme.roseSoft,
             in: RoundedRectangle(cornerRadius: 18, style: .continuous)
         )
     }
@@ -175,9 +228,9 @@ struct ReaderVisualsPanel: View {
             ContentUnavailableView(
                 "No extracted visuals yet",
                 systemImage: "photo.on.rectangle.angled",
-                description: Text("This PDF has no image-backed assets exposed yet. You can still explain the current page once a vision-capable Ollama model is available.")
+                description: Text("When a PDF exposes embedded images, they will appear here as separate figure crops instead of full-page screenshots.")
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, minHeight: 260, alignment: .center)
 
             if appModel.currentPageIndex != nil {
                 Button("Explain Current Page Snapshot", systemImage: "eye") {
@@ -190,28 +243,25 @@ struct ReaderVisualsPanel: View {
                 .disabled(!canExplainVisuals)
             }
         }
+        .padding(18)
+        .background(ReaderTheme.paperGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+        )
     }
 
-    private func visualPreviewCard(for visual: DocumentVisualAsset) -> some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.98),
-                            ReaderTheme.canvas.opacity(0.92)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+    private func visualPreviewCard(for visual: DocumentVisualAsset, height: CGFloat) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(ReaderTheme.paper)
 
             if let image = NSImage(data: visual.imageData) {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(18)
+                    .padding(16)
             } else {
                 ContentUnavailableView(
                     "Preview unavailable",
@@ -222,54 +272,132 @@ struct ReaderVisualsPanel: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 248)
+        .frame(height: height)
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(ReaderTheme.chromeStrong.opacity(0.85), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
         )
-        .shadow(color: ReaderTheme.ink.opacity(0.05), radius: 16, y: 8)
     }
 
-    private func visualThumbnail(_ visual: DocumentVisualAsset) -> some View {
-        Button {
-            appModel.selectVisual(visual)
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                if let image = NSImage(data: visual.imageData) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 120, height: 84)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                } else {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(ReaderTheme.chromeStrong.opacity(0.8))
-                        .frame(width: 120, height: 84)
-                        .overlay(
-                            Image(systemName: "photo")
-                                .foregroundStyle(ReaderTheme.slate)
-                        )
+    private func visualRowHeader(for visual: DocumentVisualAsset) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            thumbnail(for: visual)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("Page \(visual.pageIndex + 1)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(ReaderTheme.ink)
+
+                    if appModel.selectedVisual?.id == visual.id {
+                        metadataPill("Current", tint: ReaderTheme.teal, background: ReaderTheme.tealSoft)
+                    }
                 }
 
-                Text("Page \(visual.pageIndex + 1)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(ReaderTheme.ink)
+                Text(kindLabel(for: visual))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(ReaderTheme.smoke)
+
+                Text(visual.suggestedFilename)
+                    .font(.caption2)
+                    .foregroundStyle(ReaderTheme.smoke)
+                    .lineLimit(1)
             }
-            .padding(10)
-            .background(
-                appModel.selectedVisual?.id == visual.id ? Color.white.opacity(0.96) : Color.white.opacity(0.78),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(
-                        appModel.selectedVisual?.id == visual.id ? ReaderTheme.teal.opacity(0.7) : ReaderTheme.chromeStrong.opacity(0.6),
-                        lineWidth: 1
-                    )
-            )
+
+            Spacer()
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            appModel.selectVisual(visual)
+            _ = withAnimation(.easeInOut(duration: 0.18)) {
+                expandedVisualIDs.insert(visual.id)
+            }
+        }
+    }
+
+    private func thumbnail(for visual: DocumentVisualAsset) -> some View {
+        Group {
+            if let image = NSImage(data: visual.imageData) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Rectangle()
+                    .fill(ReaderTheme.panel)
+                    .overlay(
+                        Image(systemName: "photo")
+                            .foregroundStyle(ReaderTheme.smoke)
+                    )
+            }
+        }
+        .frame(width: 74, height: 74)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+        )
+    }
+
+    private func actionButtons(for visual: DocumentVisualAsset) -> some View {
+        HStack(spacing: 10) {
+            Button("Explain Diagram", systemImage: "sparkles") {
+                selectAndExplain(visual)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(ReaderTheme.teal)
+            .disabled(!canExplainVisuals)
+
+            Button("Save PNG", systemImage: "square.and.arrow.down") {
+                exportVisual(visual, revealInFinder: false)
+            }
+            .buttonStyle(.bordered)
+            .tint(ReaderTheme.brass)
+
+            Button("Reveal", systemImage: "folder") {
+                exportVisual(visual, revealInFinder: true)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private func metadataPill(_ title: String, tint: Color, background: Color) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(background, in: Capsule())
+    }
+
+    private func expansionBinding(for visualID: UUID) -> Binding<Bool> {
+        Binding(
+            get: { expandedVisualIDs.contains(visualID) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedVisualIDs.insert(visualID)
+                } else {
+                    expandedVisualIDs.remove(visualID)
+                }
+            }
+        )
+    }
+
+    private func expandSelectedVisualIfNeeded() {
+        if let selectedVisual {
+            expandedVisualIDs.insert(selectedVisual.id)
+        }
+    }
+
+    private func selectAndExplain(_ visual: DocumentVisualAsset) {
+        appModel.selectVisual(visual)
+        Task {
+            await appModel.runQuickAction(.explainVisuals)
+        }
+    }
+
+    private func exportVisual(_ visual: DocumentVisualAsset, revealInFinder: Bool) {
+        appModel.selectVisual(visual)
+        exportSelectedVisual(revealInFinder: revealInFinder)
     }
 
     private func exportSelectedVisual(revealInFinder: Bool) {

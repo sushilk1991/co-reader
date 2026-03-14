@@ -5,10 +5,10 @@ struct ReaderWorkspaceView: View {
     @Bindable var appModel: AppModel
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             ReaderToolbarView(appModel: appModel)
 
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: 14) {
                 if appModel.isLibraryVisible {
                     ReaderSidebarView(appModel: appModel)
                         .transition(.move(edge: .leading).combined(with: .opacity))
@@ -24,19 +24,23 @@ struct ReaderWorkspaceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(20)
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            LinearGradient(
-                colors: [
-                    ReaderTheme.canvas,
-                    Color.white.opacity(0.96),
-                    ReaderTheme.chrome.opacity(0.55)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background {
+            ZStack {
+                ReaderTheme.workspaceGradient
+
+                RadialGradient(
+                    colors: [
+                        Color.white.opacity(0.68),
+                        Color.white.opacity(0.0)
+                    ],
+                    center: .topLeading,
+                    startRadius: 40,
+                    endRadius: 700
+                )
+            }
+        }
         .animation(.spring(response: 0.28, dampingFraction: 0.92), value: appModel.isLibraryVisible)
         .animation(.spring(response: 0.28, dampingFraction: 0.92), value: appModel.isInspectorVisible)
         .task {

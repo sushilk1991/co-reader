@@ -24,6 +24,18 @@ struct SelectionActionBar: View {
                     .foregroundStyle(ReaderTheme.ink)
                     .lineLimit(3)
 
+                if appModel.supportsPersistentPDFHighlights {
+                    Label(
+                        appModel.isHighlightToolEnabled
+                            ? "Drag again to lay down a persistent \(appModel.selectedHighlightColor.label.lowercased()) highlight."
+                            : "Turn on the highlight pen in the toolbar to mark this passage directly on the PDF."
+                        ,
+                        systemImage: "highlighter"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(ReaderTheme.smoke)
+                }
+
                 HStack(spacing: 10) {
                     Button("Ask", systemImage: "sparkles") {
                         Task { await appModel.askAboutSelection() }
@@ -31,14 +43,16 @@ struct SelectionActionBar: View {
                     .buttonStyle(.borderedProminent)
                     .tint(ReaderTheme.teal)
 
-                    Button("Highlight", systemImage: "highlighter") {
-                        do {
-                            try appModel.saveQuickHighlight()
-                        } catch {
-                            appModel.chatError = error.localizedDescription
+                    if !appModel.supportsPersistentPDFHighlights {
+                        Button("Highlight", systemImage: "highlighter") {
+                            do {
+                                try appModel.saveQuickHighlight()
+                            } catch {
+                                appModel.chatError = error.localizedDescription
+                            }
                         }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
 
                     Button("Note", systemImage: "square.and.pencil") {
                         appModel.prepareSelectionNote()

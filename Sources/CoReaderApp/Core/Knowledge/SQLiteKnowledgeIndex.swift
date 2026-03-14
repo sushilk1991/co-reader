@@ -109,6 +109,20 @@ final class SQLiteKnowledgeIndex {
         return summaries
     }
 
+    func delete(noteID: UUID) throws {
+        let sql = "DELETE FROM notes WHERE id = ?;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw error(message: "Failed to prepare knowledge delete.")
+        }
+        defer { sqlite3_finalize(statement) }
+
+        try bind(noteID.uuidString.lowercased(), at: 1, to: statement)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw error(message: "Failed to execute knowledge delete.")
+        }
+    }
+
     private func openDatabase() throws {
         try FileManager.default.createDirectory(
             at: databaseURL.deletingLastPathComponent(),

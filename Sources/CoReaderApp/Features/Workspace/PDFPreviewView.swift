@@ -3,15 +3,20 @@ import SwiftUI
 
 struct PDFPreviewView: NSViewRepresentable {
     let fileURL: URL
+    let highlights: [PDFDocumentHighlight]
+    let isHighlightToolEnabled: Bool
+    let selectedHighlightColor: ReaderHighlightColor
     let onSelectionChange: @MainActor (DocumentSelection?) -> Void
     let onReadingPositionChange: @MainActor (Int?, [Int]) -> Void
+    let onHighlightCapture: @MainActor ([PDFDocumentHighlightDraft]) -> Void
+    let onHighlightRemoval: @MainActor (UUID) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
-    func makeNSView(context: Context) -> PDFView {
-        let view = PDFView()
+    func makeNSView(context: Context) -> HighlightingPDFView {
+        let view = HighlightingPDFView()
         view.autoScales = true
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
@@ -19,12 +24,16 @@ struct PDFPreviewView: NSViewRepresentable {
         view.displaysPageBreaks = true
         context.coordinator.attach(to: view)
         context.coordinator.updateDocumentIfNeeded(fileURL, in: view)
+        context.coordinator.syncHighlightConfiguration(in: view)
+        context.coordinator.syncHighlights(in: view)
         return view
     }
 
-    func updateNSView(_ nsView: PDFView, context: Context) {
+    func updateNSView(_ nsView: HighlightingPDFView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.updateDocumentIfNeeded(fileURL, in: nsView)
+        context.coordinator.syncHighlightConfiguration(in: nsView)
+        context.coordinator.syncHighlights(in: nsView)
     }
 
     @MainActor
@@ -41,7 +50,7 @@ struct PDFPreviewView: NSViewRepresentable {
             NotificationCenter.default.removeObserver(self)
         }
 
-        func attach(to pdfView: PDFView) {
+        func attach(to pdfView: HighlightingPDFView) {
             NotificationCenter.default.removeObserver(self)
             NotificationCenter.default.addObserver(
                 self,
@@ -69,7 +78,7 @@ struct PDFPreviewView: NSViewRepresentable {
             )
         }
 
-        func updateDocumentIfNeeded(_ fileURL: URL, in pdfView: PDFView) {
+        func updateDocumentIfNeeded(_ fileURL: URL, in pdfView: HighlightingPDFView) {
             let normalizedURL = fileURL.standardizedFileURL
             guard loadedFileURL != normalizedURL else {
                 return
@@ -81,6 +90,29 @@ struct PDFPreviewView: NSViewRepresentable {
             publishReadingPosition(for: pdfView)
         }
 
+        func syncHighlightConfiguration(in pdfView: HighlightingPDFView) {
+            pdfView.isHighlightToolEnabled = parent.isHighlightToolEnabled
+            pdfView.selectedHighlightColor = parent.selectedHighlightColor
+            pdfView.onHighlightCapture = { [weak self] drafts in
+                guard let self else {
+                    return
+                }
+
+                self.parent.onHighlightCapture(drafts)
+            }
+            pdfView.onHighlightRemoval = { [weak self] highlightID in
+                guard let self else {
+                    return
+                }
+
+                self.parent.onHighlightRemoval(highlightID)
+            }
+        }
+
+        func syncHighlights(in pdfView: HighlightingPDFView) {
+            pdfView.syncManagedHighlights(parent.highlights)
+        }
+
         private func publishSelection(for pdfView: PDFView) {
             let normalizedSelection = pdfView.currentSelection?
                 .string?
@@ -88,9 +120,9 @@ struct PDFPreviewView: NSViewRepresentable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard let normalizedSelection, !normalizedSelection.isEmpty else {
-            parent.onSelectionChange(nil)
-            return
-        }
+                parent.onSelectionChange(nil)
+                return
+            }
 
             let anchorPage = pdfView.currentSelection?.pages.first ?? pdfView.currentPage
             let pageIndex = anchorPage.flatMap { pdfView.document?.index(for: $0) } ?? 0
@@ -145,12 +177,13 @@ struct PDFPreviewView: NSViewRepresentable {
 
         @objc
         private func handleDocumentChanged(_ notification: Notification) {
-            guard let pdfView = notification.object as? PDFView else {
+            guard let pdfView = notification.object as? HighlightingPDFView else {
                 return
             }
 
             publishSelection(for: pdfView)
             publishReadingPosition(for: pdfView)
+            syncHighlights(in: pdfView)
         }
     }
 }

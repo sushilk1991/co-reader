@@ -6,6 +6,11 @@ struct ReaderInspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            Text("Workspace Tools")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(ReaderTheme.smoke)
+                .textCase(.uppercase)
+
             Picker("Tool", selection: $appModel.selectedInspectorTab) {
                 Text("Ask").tag(InspectorTab.ask)
                 Text("Notes").tag(InspectorTab.notes)
@@ -13,6 +18,8 @@ struct ReaderInspectorView: View {
                 Text("Visuals").tag(InspectorTab.visuals)
             }
             .pickerStyle(.segmented)
+            .padding(6)
+            .background(ReaderTheme.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
             Group {
                 switch appModel.selectedInspectorTab {
@@ -29,11 +36,12 @@ struct ReaderInspectorView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .padding(20)
-        .frame(width: 380)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .frame(width: 368)
+        .background(ReaderTheme.panelGradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(ReaderTheme.chromeStrong.opacity(0.7), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(ReaderTheme.lineSoft, lineWidth: 1)
         )
+        .shadow(color: ReaderTheme.shadow, radius: 18, y: 8)
     }
 }

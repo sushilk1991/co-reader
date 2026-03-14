@@ -20,7 +20,11 @@ struct ReaderHighlightsPanel: View {
                 ContentUnavailableView(
                     "No highlights yet",
                     systemImage: "highlighter",
-                    description: Text("Select text in the document, then save a highlight from the floating action bar.")
+                    description: Text(
+                        appModel.supportsPersistentPDFHighlights
+                            ? "Turn on the highlight pen in the toolbar, drag across text to keep it on the PDF, then right-click or use Delete here to remove it."
+                            : "Select text in the document, then save a highlight from the action bar."
+                    )
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -32,7 +36,22 @@ struct ReaderHighlightsPanel: View {
                                     Text(highlight.documentTitle)
                                         .font(.headline)
                                         .foregroundStyle(ReaderTheme.ink)
+
+                                    Text(highlight.color.label)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(ReaderTheme.ink)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(highlight.color.pillColor, in: Capsule())
+
                                     Spacer()
+
+                                    Button("Delete", systemImage: "trash") {
+                                        appModel.deleteHighlight(highlight.id)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .foregroundStyle(ReaderTheme.rose)
+
                                     Text(appModel.locationLabel(for: highlight.pageIndex))
                                         .font(.caption.weight(.medium))
                                         .foregroundStyle(ReaderTheme.brass)
