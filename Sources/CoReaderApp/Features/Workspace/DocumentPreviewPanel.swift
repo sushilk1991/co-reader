@@ -1,4 +1,5 @@
 import Observation
+import PDFKit
 import SwiftUI
 
 struct DocumentPreviewPanel: View {
@@ -47,6 +48,11 @@ struct DocumentPreviewPanel: View {
                                     )
                             }
                         }
+                    }
+
+                    if appModel.readingProgress > 0 {
+                        ReadingProgressBar(progress: appModel.readingProgress)
+                            .padding(.horizontal, 4)
                     }
 
                     ZStack(alignment: .bottomLeading) {
@@ -159,5 +165,20 @@ struct DocumentPreviewPanel: View {
         }
         .padding(4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task(id: appModel.selectedDocument?.id) {
+            guard let document = appModel.selectedDocument else { return }
+            switch document.kind {
+            case .pdf:
+                if let pdfDoc = PDFKit.PDFDocument(url: document.fileURL) {
+                    appModel.updateTotalPages(pdfDoc.pageCount)
+                }
+            case .epub:
+                if let book = try? LiveEPUBBookLoader().loadBook(from: document.fileURL) {
+                    appModel.updateTotalPages(book.sections.count)
+                }
+            case .unknown:
+                break
+            }
+        }
     }
 }

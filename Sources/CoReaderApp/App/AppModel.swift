@@ -45,6 +45,7 @@ final class AppModel {
     var isCommandPaletteVisible = false
     var autoSummary: String?
     var autoConceptTags: [String] = []
+    var totalDocumentPages: Int?
     var chatInput = ""
     var chatError: String?
     var chatTranscript: [ChatMessage] = []
@@ -127,7 +128,22 @@ final class AppModel {
             return nil
         }
 
+        if let total = totalDocumentPages {
+            return "\(locationLabel(for: currentPageIndex)) of \(total)"
+        }
+
         return locationLabel(for: currentPageIndex)
+    }
+
+    var readingProgress: Double {
+        guard let currentPageIndex, let total = totalDocumentPages, total > 0 else {
+            return 0
+        }
+        return Double(currentPageIndex + 1) / Double(total)
+    }
+
+    func updateTotalPages(_ count: Int) {
+        totalDocumentPages = count
     }
 
     var selectionSummary: String? {
@@ -638,6 +654,7 @@ final class AppModel {
         savedHighlights = []
         autoSummary = nil
         autoConceptTags = []
+        totalDocumentPages = nil
         summaryTask?.cancel()
 
         currentPageIndex = readingPositionsByDocument[positionKey(for: document)]

@@ -202,6 +202,13 @@ private struct EPUBSectionWebView: NSViewRepresentable {
             userContentController.removeAllUserScripts()
             userContentController.addUserScript(
                 WKUserScript(
+                    source: Self.typographyScript,
+                    injectionTime: .atDocumentEnd,
+                    forMainFrameOnly: true
+                )
+            )
+            userContentController.addUserScript(
+                WKUserScript(
                     source: Self.selectionScript,
                     injectionTime: .atDocumentEnd,
                     forMainFrameOnly: true
@@ -245,6 +252,58 @@ private struct EPUBSectionWebView: NSViewRepresentable {
                 onSelectionChange(selection)
             }
         }
+
+        private static let typographyScript = """
+        (() => {
+          const style = document.createElement('style');
+          style.textContent = `
+            body {
+              font-family: -apple-system-ui-serif, 'New York', Georgia, serif !important;
+              font-size: 18px !important;
+              line-height: 1.78 !important;
+              max-width: 680px !important;
+              margin: 2.5em auto !important;
+              padding: 0 1.5em !important;
+              color: #2E261F !important;
+              background: transparent !important;
+              -webkit-font-smoothing: antialiased !important;
+              text-rendering: optimizeLegibility !important;
+            }
+            img { max-width: 100% !important; height: auto !important; border-radius: 8px; }
+            pre, code {
+              font-family: ui-monospace, 'SF Mono', Menlo, monospace !important;
+              font-size: 0.88em !important;
+              background: rgba(0,0,0,0.04) !important;
+              padding: 0.15em 0.35em !important;
+              border-radius: 4px !important;
+            }
+            pre { padding: 1em !important; overflow-x: auto !important; }
+            a { color: #1C756E !important; text-decoration: none !important; }
+            a:hover { text-decoration: underline !important; }
+            h1, h2, h3, h4, h5, h6 {
+              font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
+              line-height: 1.3 !important;
+              margin-top: 1.8em !important;
+            }
+            blockquote {
+              border-left: 3px solid #1C756E !important;
+              padding-left: 1em !important;
+              margin-left: 0 !important;
+              font-style: italic !important;
+              color: #69574A !important;
+            }
+            ::selection { background: rgba(28, 117, 110, 0.25) !important; }
+            @media (prefers-color-scheme: dark) {
+              body { color: #EDE8E0 !important; }
+              a { color: #38A69E !important; }
+              blockquote { border-left-color: #38A69E !important; color: #7F7468 !important; }
+              pre, code { background: rgba(255,255,255,0.06) !important; }
+              ::selection { background: rgba(56, 166, 158, 0.3) !important; }
+            }
+          `;
+          document.head.appendChild(style);
+        })();
+        """
 
         private static let selectionHandlerName = "coreaderSelection"
         private static let selectionScript = """
