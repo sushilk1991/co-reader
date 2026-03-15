@@ -31,45 +31,47 @@ struct ReaderHighlightsPanel: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(appModel.savedHighlights) { highlight in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text(highlight.documentTitle)
-                                        .font(.headline)
-                                        .foregroundStyle(ReaderTheme.ink)
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(highlight.color.swatchColor)
+                                        .frame(width: 10, height: 10)
 
-                                    Text(highlight.color.label)
+                                    Text(appModel.locationLabel(for: highlight.pageIndex))
                                         .font(.caption.weight(.semibold))
-                                        .foregroundStyle(ReaderTheme.ink)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(highlight.color.pillColor, in: Capsule())
+                                        .foregroundStyle(ReaderTheme.brass)
 
                                     Spacer()
 
-                                    Button("Delete", systemImage: "trash") {
+                                    Button {
                                         appModel.deleteHighlight(highlight.id)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.caption)
+                                            .foregroundStyle(ReaderTheme.rose)
                                     }
                                     .buttonStyle(.borderless)
-                                    .foregroundStyle(ReaderTheme.rose)
-
-                                    Text(appModel.locationLabel(for: highlight.pageIndex))
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(ReaderTheme.brass)
                                 }
 
                                 Text(highlight.quotedText)
                                     .font(.callout)
-                                    .foregroundStyle(ReaderTheme.slate)
+                                    .foregroundStyle(ReaderTheme.ink)
+                                    .lineLimit(5)
 
                                 if let noteText = highlight.noteText {
                                     Text(noteText)
                                         .font(.footnote)
-                                        .foregroundStyle(ReaderTheme.ink)
+                                        .foregroundStyle(ReaderTheme.slate)
+                                        .lineLimit(3)
                                 }
                             }
                             .padding(14)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(ReaderTheme.paper, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(ReaderTheme.lineSoft, lineWidth: 1)
+                            )
                         }
                     }
                 }

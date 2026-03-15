@@ -10,31 +10,26 @@ protocol ClaudeCLIProbing: AIProviderProbing {}
 struct AIProviderDiscovery: Sendable {
     let ollamaProbe: OllamaProbing
     let claudeProbe: ClaudeCLIProbing
-    let openAIProbe: OpenAICompatibleProbing
 
     init(
         ollamaProbe: OllamaProbing,
-        claudeProbe: ClaudeCLIProbing,
-        openAIProbe: OpenAICompatibleProbing = OpenAICompatibleClient()
+        claudeProbe: ClaudeCLIProbing
     ) {
         self.ollamaProbe = ollamaProbe
         self.claudeProbe = claudeProbe
-        self.openAIProbe = openAIProbe
     }
 
     static func live() -> AIProviderDiscovery {
         AIProviderDiscovery(
             ollamaProbe: OllamaClient(),
-            claudeProbe: ClaudeCLIProbe(),
-            openAIProbe: OpenAICompatibleClient()
+            claudeProbe: ClaudeCLIProbe()
         )
     }
 
     func discoverProviders() async throws -> [AIProviderStatus] {
         async let ollamaStatus = makeStatus(for: .ollama, using: ollamaProbe)
         async let claudeStatus = makeStatus(for: .claudeCLI, using: claudeProbe)
-        async let openAIStatus = makeStatus(for: .openAICompatible, using: openAIProbe)
-        return try await [ollamaStatus, claudeStatus, openAIStatus]
+        return try await [ollamaStatus, claudeStatus]
     }
 
     private func makeStatus(

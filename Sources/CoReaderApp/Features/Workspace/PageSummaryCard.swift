@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PageSummaryCard: View {
     let summary: String
+    let onDismiss: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -17,8 +18,19 @@ struct PageSummaryCard: View {
                 Text(summary)
                     .font(.subheadline)
                     .foregroundStyle(ReaderTheme.ink)
-                    .lineLimit(4)
+                    .lineLimit(6)
             }
+
+            Spacer()
+
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(ReaderTheme.smoke)
+            }
+            .buttonStyle(.borderless)
         }
         .padding(14)
         .frame(maxWidth: 420, alignment: .leading)

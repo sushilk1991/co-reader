@@ -6,6 +6,7 @@ struct ReaderVisualsPanel: View {
     @Bindable var appModel: AppModel
     @State private var actionStatus: VisualActionStatus?
     @State private var expandedVisualIDs: Set<UUID> = []
+    @State private var lightboxVisual: DocumentVisualAsset?
 
     var body: some View {
         ScrollView {
@@ -25,6 +26,48 @@ struct ReaderVisualsPanel: View {
             .padding(.bottom, 10)
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
+        .overlay {
+            if let visual = lightboxVisual {
+                ZStack {
+                    Color.black.opacity(0.85)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            lightboxVisual = nil
+                        }
+
+                    VStack(spacing: 16) {
+                        HStack {
+                            Text("Page \(visual.pageIndex + 1)")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            Spacer()
+                            Button {
+                                lightboxVisual = nil
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.white.opacity(0.8))
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        .padding(.horizontal, 24)
+
+                        if let image = NSImage(data: visual.imageData) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .padding(24)
+                        }
+                    }
+                }
+                .onExitCommand {
+                    lightboxVisual = nil
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: lightboxVisual?.id)
         .onAppear {
             expandSelectedVisualIfNeeded()
         }
@@ -271,6 +314,7 @@ struct ReaderVisualsPanel: View {
                 .padding(18)
             }
         }
+        .onTapGesture { lightboxVisual = visual }
         .frame(maxWidth: .infinity)
         .frame(height: height)
         .overlay(

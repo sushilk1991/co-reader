@@ -13,12 +13,4 @@ enum AIProviderProbeResult: Equatable, Sendable {
     static func available(version: String) -> Self {
         .ready(detail: "Claude CLI \(version)", models: [])
     }
-
-    static func openAICompatibleAvailable(models: [String]) -> Self {
-        if models.isEmpty {
-            .ready(detail: "OpenAI-compatible server running, but no models loaded.", models: [])
-        } else {
-            .ready(detail: "OpenAI-compatible server with \(models.count) model(s).", models: models)
-        }
-    }
 }

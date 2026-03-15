@@ -2,18 +2,15 @@ struct DocumentAssistant: DocumentAssisting {
     let extractor: DocumentContextExtracting
     let ollamaGenerator: OllamaGenerating
     let claudeGenerator: ClaudeGenerating
-    let openAIGenerator: OpenAICompatibleGenerating
 
     init(
         extractor: DocumentContextExtracting = LiveDocumentContextExtractor(),
         ollamaGenerator: OllamaGenerating = OllamaGenerationClient(),
-        claudeGenerator: ClaudeGenerating = ClaudeCodeClient(),
-        openAIGenerator: OpenAICompatibleGenerating = OpenAICompatibleClient()
+        claudeGenerator: ClaudeGenerating = ClaudeCodeClient()
     ) {
         self.extractor = extractor
         self.ollamaGenerator = ollamaGenerator
         self.claudeGenerator = claudeGenerator
-        self.openAIGenerator = openAIGenerator
     }
 
     func answer(
@@ -39,8 +36,6 @@ struct DocumentAssistant: DocumentAssisting {
         switch preferredExecutionTarget(from: providerStatuses, requiresVision: visualAsset != nil) {
         case let .ollama(model):
             return try await ollamaGenerator.generate(model: model, prompt: prompt, imageData: visualAsset?.imageData)
-        case let .openAICompatible(model):
-            return try await openAIGenerator.generate(model: model, prompt: prompt)
         case .claude:
             return try await claudeGenerator.generate(prompt: prompt)
         case .unavailableVision:
@@ -93,10 +88,6 @@ struct DocumentAssistant: DocumentAssisting {
             return .ollama(model: ollama.models[0])
         }
 
-        if let openAI = providerStatuses.first(where: { $0.kind == .openAICompatible && $0.isAvailable && !$0.models.isEmpty }) {
-            return .openAICompatible(model: openAI.models[0])
-        }
-
         if providerStatuses.contains(where: { $0.kind == .claudeCLI && $0.isAvailable }) {
             return .claude
         }
@@ -119,7 +110,6 @@ struct DocumentAssistant: DocumentAssisting {
 
 private enum ExecutionTarget {
     case ollama(model: String)
-    case openAICompatible(model: String)
     case claude
     case unavailableVision
     case unavailable

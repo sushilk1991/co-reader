@@ -177,11 +177,11 @@ final class AppModel {
 
     var statusDetail: String {
         if isDiscoveringProviders {
-            return "Checking Ollama, LM Studio, and the Claude CLI."
+            return "Checking Ollama and the Claude CLI."
         }
 
         if hasLoadedProviders {
-            return "Use Ollama, LM Studio, or Claude locally to ask document questions, explain figures, and generate code snippets."
+            return "Use Ollama or Claude locally to ask document questions, explain figures, and generate code snippets."
         }
 
         return "The first provider scan starts automatically when the window opens."
@@ -601,7 +601,8 @@ final class AppModel {
                     visualAsset: nil
                 )
 
-                let (summary, tags) = parseSummaryAndTags(answer)
+                let cleanedAnswer = Self.stripThinkingTags(answer)
+                let (summary, tags) = parseSummaryAndTags(cleanedAnswer)
                 summarizedPageKeys.insert(key)
                 pageSummaries[key] = summary
                 conceptsByPage[key] = tags
@@ -617,6 +618,14 @@ final class AppModel {
         }
     }
 
+    private static func stripThinkingTags(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: "<think>[\\s\\S]*?</think>",
+            with: "",
+            options: .regularExpression
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func parseSummaryAndTags(_ text: String) -> (summary: String, tags: [String]) {
         let parts = text.components(separatedBy: "Tags:")
         let summary = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -627,6 +636,8 @@ final class AppModel {
 
         let tags = parts[1]
             .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { $0.replacingOccurrences(of: "\\*+", with: "", options: .regularExpression) }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
@@ -822,7 +833,7 @@ final class AppModel {
                 visiblePageIndexes: visiblePageIndexes,
                 visualAsset: visualAsset
             )
-            chatTranscript.append(ChatMessage(role: .assistant, content: answer))
+            chatTranscript.append(ChatMessage(role: .assistant, content: Self.stripThinkingTags(answer)))
 
             do {
                 try knowledgeCapture.capture(question: question, answer: answer, for: document)

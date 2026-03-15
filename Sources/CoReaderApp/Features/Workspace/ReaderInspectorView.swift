@@ -19,6 +19,7 @@ struct ReaderInspectorView: View {
                 Text("Map").tag(InspectorTab.knowledge)
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .padding(6)
             .background(ReaderTheme.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 

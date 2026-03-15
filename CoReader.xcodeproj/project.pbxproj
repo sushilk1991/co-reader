@@ -52,7 +52,6 @@
 		4A52C52398DD95FEDE481CE4 /* ShellCommandRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644872FA11CFBFDA8A2A0D1E /* ShellCommandRunning.swift */; };
 		4AD1A9562932A8FC2F650C10 /* DocumentContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A15C5BBDD528255592F23B /* DocumentContext.swift */; };
 		5257D4A0B1CD5DE3B414C2B5 /* ReaderHighlightColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE109C2EED26B07E539F5ABD /* ReaderHighlightColor.swift */; };
-		5764715FB19D764E9A169F17 /* OpenAICompatibleClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 591EA95DDD8915CF8959FA27 /* OpenAICompatibleClient.swift */; };
 		59F87862E4052B0E0BB26B29 /* KnowledgeMapPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119B742AB96AB3061EB20735 /* KnowledgeMapPanel.swift */; };
 		5AFF7BAE2B41503A6B25C2C1 /* DocumentAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A2AB3F6D5A506DDA54FF21 /* DocumentAssistant.swift */; };
 		5C384FECE7B74340C90AA5FC /* AIProviderStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC745549A2A238B752B38879 /* AIProviderStatus.swift */; };
@@ -68,7 +67,6 @@
 		6A8E8A79B5C81BF0FD82FD8C /* KnowledgeCapturing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25F18F03E292B13CDE697E4 /* KnowledgeCapturing.swift */; };
 		6AEC56CDE9A2B526CC97FCAD /* CoReaderPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE616B60941D8F88B497662 /* CoReaderPaths.swift */; };
 		6AFBCB64A30C21F6F8DE1637 /* KnowledgeNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D396F09C119AA183206E9C2 /* KnowledgeNote.swift */; };
-		6D978BD461961E0B1CE6C3B7 /* OpenAICompatibleGenerating.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E7EB91C684FFEA30222139 /* OpenAICompatibleGenerating.swift */; };
 		6FB9C1D62DD464D6D6FDE6E3 /* DocumentVisualAsset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29DE6D4D600BB33BF871B61F /* DocumentVisualAsset.swift */; };
 		7319902936765C738A7F8FAE /* ChatKnowledgeCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4B8FCB6013426C05B9F209 /* ChatKnowledgeCapture.swift */; };
 		77D72AC1792283FBEC89FA07 /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EC1A166F2C0052E7DE948B2 /* ChatMessage.swift */; };
@@ -186,7 +184,6 @@
 		55FDDE588837E8B7458D4EF2 /* KnowledgeNoteSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeNoteSummary.swift; sourceTree = "<group>"; };
 		56041CDF13ECA6212F08083C /* ReaderDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderDocument.swift; sourceTree = "<group>"; };
 		58647E1A342EE3964FC6A07E /* EPUBLoaderError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EPUBLoaderError.swift; sourceTree = "<group>"; };
-		591EA95DDD8915CF8959FA27 /* OpenAICompatibleClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAICompatibleClient.swift; sourceTree = "<group>"; };
 		5AC73F46F4A9F0E918F74948 /* LearningActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningActionTests.swift; sourceTree = "<group>"; };
 		5B282CE6D93A9FDAD4F5A3CA /* LiveDocumentVisualExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDocumentVisualExporter.swift; sourceTree = "<group>"; };
 		5DB3A2F799F00C277D858470 /* KnowledgeRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeRepository.swift; sourceTree = "<group>"; };
@@ -246,7 +243,6 @@
 		D438D0E36486D1F288897B98 /* ImportedDocumentRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportedDocumentRow.swift; sourceTree = "<group>"; };
 		D467220B52FC69C5D8F9C4F1 /* AIProviderStatus+Vision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIProviderStatus+Vision.swift"; sourceTree = "<group>"; };
 		D505A554A57E18A5263D797C /* CoReaderApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CoReaderApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		D6E7EB91C684FFEA30222139 /* OpenAICompatibleGenerating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAICompatibleGenerating.swift; sourceTree = "<group>"; };
 		DE109C2EED26B07E539F5ABD /* ReaderHighlightColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderHighlightColor.swift; sourceTree = "<group>"; };
 		E0580D6262C2ECB5A0C24F90 /* EPUBReaderLoadState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EPUBReaderLoadState.swift; sourceTree = "<group>"; };
 		E8279B17950A7E99136DD4F9 /* OllamaGenerating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaGenerating.swift; sourceTree = "<group>"; };
@@ -492,8 +488,6 @@
 				2C9C2582CCEE5F02FA95FB17 /* OllamaClient.swift */,
 				E8279B17950A7E99136DD4F9 /* OllamaGenerating.swift */,
 				01789C636BB531F76C13C232 /* OllamaGenerationClient.swift */,
-				591EA95DDD8915CF8959FA27 /* OpenAICompatibleClient.swift */,
-				D6E7EB91C684FFEA30222139 /* OpenAICompatibleGenerating.swift */,
 				A292E2E85887E80972C2661C /* ProcessCommandRunner.swift */,
 				510366920308F8FE428195EA /* ShellCommandResult.swift */,
 				644872FA11CFBFDA8A2A0D1E /* ShellCommandRunning.swift */,
@@ -737,8 +731,6 @@
 				48B2A7C2B9B7531DFC3353E0 /* OllamaClient.swift in Sources */,
 				B90EE3220CFB666270515774 /* OllamaGenerating.swift in Sources */,
 				063FA1186BFBE12AC3C289EC /* OllamaGenerationClient.swift in Sources */,
-				5764715FB19D764E9A169F17 /* OpenAICompatibleClient.swift in Sources */,
-				6D978BD461961E0B1CE6C3B7 /* OpenAICompatibleGenerating.swift in Sources */,
 				D48EEF6BC55EA0F1677412FF /* PDFDocumentHighlight.swift in Sources */,
 				F77AF6CD65F80CAF1588DC27 /* PDFImagePlacementScanner.swift in Sources */,
 				A62530710A5911B1E378FCB5 /* PDFPreviewView.swift in Sources */,

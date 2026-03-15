@@ -16,7 +16,7 @@ struct AIProviderDiscoveryTests {
 
         let providers = try await discovery.discoverProviders()
 
-        #expect(providers.count == 3)
+        #expect(providers.count == 2)
         #expect(providers.first(where: { $0.kind == .ollama })?.isAvailable == true)
         #expect(providers.first(where: { $0.kind == .ollama })?.models == ["llama3.2", "qwen2.5-coder"])
         #expect(providers.first(where: { $0.kind == .claudeCLI })?.detail == "Claude CLI 1.2.3")
@@ -35,7 +35,7 @@ struct AIProviderDiscoveryTests {
 
         let providers = try await discovery.discoverProviders()
 
-        #expect(providers.count == 3)
+        #expect(providers.count == 2)
         #expect(providers.first(where: { $0.kind == .ollama })?.isAvailable == false)
         #expect(providers.first(where: { $0.kind == .ollama })?.detail == "Ollama server did not respond")
         #expect(providers.first(where: { $0.kind == .claudeCLI })?.detail == "claude not found on PATH")

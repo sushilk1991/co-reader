@@ -110,7 +110,7 @@ struct DocumentPreviewPanel: View {
 
                         VStack(alignment: .leading, spacing: 12) {
                             if let summary = appModel.autoSummary {
-                                PageSummaryCard(summary: summary)
+                                PageSummaryCard(summary: summary, onDismiss: { appModel.autoSummary = nil })
                                     .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
 

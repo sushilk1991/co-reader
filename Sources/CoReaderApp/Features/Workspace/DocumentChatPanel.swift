@@ -38,7 +38,9 @@ struct DocumentChatPanel: View {
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.vertical, 2)
             }
+            .scrollClipDisabled()
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Scope")
