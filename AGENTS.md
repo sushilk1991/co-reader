@@ -34,6 +34,11 @@ via `make build-and-run-background`, which launches the Debug `.app` through
   existing exception.
 - Local providers only (Ollama, Claude CLI in `AIProviderKind`). Keep
   `project.yml` `platform: macOS`.
+- Nothing blocking on the MainActor: PDFKit page walks and file reads go
+  through `Core/Concurrency/BlockingWork.swift` (cancellable, reports
+  progress); child processes go through `ShellCommand`, which always carries
+  a timeout. `PRODUCT_INTENT.md` "Current state" lists the defects this
+  prevents and the known follow-ups.
 
 ## Maintaining this file
 
