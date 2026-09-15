@@ -11,13 +11,13 @@ macOS 15+ SwiftUI reader. Not iOS. Product/UX: `PRODUCT_INTENT.md`.
 ```bash
 xcodegen generate --spec project.yml
 swift test
-AGENT_NAME=coreader-intent ./scripts/xcbuild.sh --action test -- -project CoReader.xcodeproj -scheme CoReaderApp -destination 'platform=macOS' -derivedDataPath build/DerivedData/coreader-intent CODE_SIGNING_ALLOWED=NO test
-./scripts/run_app_macos.sh --app-path build/DerivedData/coreader-intent/Build/Products/Debug/CoReader.app --background
+make test
+make build-and-run-background
 ```
 
-Replace `coreader-intent` with your `AGENT_NAME` (`scripts/xcbuild.sh` requires
-one). Definition of done: `swift test` and the `xcbuild.sh --action test` line
-both exit 0. Run the GUI only via `run_app_macos.sh` on that Debug `.app`.
+Definition of done: `swift test` and `make test` both exit 0. Run the GUI only
+via `make build-and-run-background`, which launches the Debug `.app` through
+`scripts/run_app_macos.sh`.
 
 ## Guardrails
 

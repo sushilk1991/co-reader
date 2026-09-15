@@ -70,11 +70,14 @@ this document does not fix them.
 2. `PDFImagePlacementScanner.swift:130-147` — `Do` on a Form XObject recurses
    into `scanPDFContentStream` with no depth cap or visited set. Trigger: a PDF
    whose forms nest deeply or cycle. Effect: stack overflow abort.
-3. `ProcessCommandRunner.swift:14-15` — `waitUntilExit()` with no timeout, on
-   the MainActor via `AppModel.refreshProviders` / `ClaudeCodeClient`. Trigger:
-   launch (Claude probe falls through to `/bin/zsh -l -c "claude --version"` at
-   `ClaudeCLIProbe.swift:35-38`) or Ask when Claude is the fallback. Effect:
-   beach-ball; a hanging login shell never returns.
+3. `ProcessCommandRunner.swift:14-15` — `waitUntilExit()` with no timeout. The
+   runner is a nonisolated `async` struct, so the call hops off the MainActor
+   and pins a cooperative-pool thread while `AppModel.refreshProviders` /
+   `ClaudeCodeClient` await a task that never completes. Trigger: launch
+   (Claude probe falls through to `/bin/zsh -l -c "claude --version"` at
+   `ClaudeCLIProbe.swift:35-38`) or Ask when Claude is the fallback. Effect: a
+   hanging login shell never returns; provider status stays "discovering", the
+   Ask never answers, and the pool thread is lost for the process lifetime.
 4. `HighlightingPDFView.swift:115-146` via `PDFPreviewView.swift:36` — every
    SwiftUI `updateNSView` strips and re-adds all highlight annotations. Trigger:
    scrolling (page-change mutates `AppModel`, so the representable updates).
@@ -83,8 +86,10 @@ this document does not fix them.
    matching `removeScriptMessageHandler` in `deinit`. Trigger: close or switch
    an EPUB. Effect: WebKit teardown crash.
 6. `LiveDocumentContextExtractor.swift:52-63` — Ask walks `page.string` for
-   every PDF page on the MainActor before the LLM `await`. Trigger: question on
-   a long PDF. Effect: UI freeze.
+   every PDF page synchronously inside nonisolated `DocumentAssistant.answer`,
+   before the LLM `await`. That pins a cooperative-pool thread, not the main
+   thread. Trigger: question on a long PDF. Effect: the answer stalls for the
+   whole extraction with no progress or cancellation.
 7. `DocumentPreviewPanel.swift:175-177` — page-count load calls
    `LiveEPUBBookLoader.loadBook` on `.task` (MainActor), and
    `LiveEPUBBookLoader.swift:73-74` blocks on `ditto`. Trigger: open an EPUB.
@@ -98,8 +103,10 @@ this document does not fix them.
    `updateReadingPosition`, which overwrites the saved position. Trigger:
    quit mid-document, relaunch. Effect: always starts at the beginning.
 9. `ProviderStatusView.swift:12-21` — `fileImporter` never calls
-   `startAccessingSecurityScopedResource()`. Trigger: Import PDF or EPUB.
-   Effect: open/extract can fail once the importer callback ends.
+   `startAccessingSecurityScopedResource()`. Not reachable today: the app is
+   unsandboxed, so importer URLs stay readable after the callback. Precondition
+   if the app is ever sandboxed: without it, open/extract fails once the
+   importer callback ends.
 10. `DocumentLibrary.swift:6-15` stores the original URL only.
     `AppModel.swift:532-534` skips missing paths with no message. Trigger:
     move/delete the file, or relaunch. Effect: library silently shrinks.
