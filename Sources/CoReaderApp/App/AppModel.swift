@@ -22,6 +22,7 @@ final class AppModel {
     private var summaryTask: Task<Void, Never>?
     private var lastAutoSummaryKey: String?
     private var visualExtractionTask: Task<Void, Never>?
+    private var currentVisualExtractionID: UUID?
     private var askTask: Task<Void, Never>?
     private var currentAskID: UUID?
     private var hasRestoredReadingState = false
@@ -867,6 +868,8 @@ final class AppModel {
     /// a Cancel button meanwhile. Switching documents cancels the previous scan.
     private func startVisualExtraction(for document: ReaderDocument) {
         visualExtractionTask?.cancel()
+        let extractionID = UUID()
+        currentVisualExtractionID = extractionID
         isExtractingVisuals = true
         visualExtractionProgress = nil
         visualExtractionError = nil
@@ -874,19 +877,19 @@ final class AppModel {
         // Progress arrives on the GCD thread; hop back to the actor to publish it.
         let reportProgress: @Sendable (PageScanProgress) -> Void = { [weak self] progress in
             Task { @MainActor in
-                self?.noteVisualExtractionProgress(progress, for: document)
+                self?.noteVisualExtractionProgress(progress, extractionID: extractionID)
             }
         }
 
         visualExtractionTask = Task { [weak self] in
-            defer { self?.finishVisualExtraction(for: document) }
+            defer { self?.finishVisualExtraction(extractionID: extractionID) }
 
             do {
                 let visuals = try await BlockingWork.run { isCancelled in
                     try extractor.extractVisuals(for: document, isCancelled: isCancelled, onProgress: reportProgress)
                 }
 
-                guard let self, !Task.isCancelled, self.selectedDocument?.id == document.id else {
+                guard let self, !Task.isCancelled, self.currentVisualExtractionID == extractionID else {
                     return
                 }
                 documentVisuals = visuals
@@ -894,7 +897,7 @@ final class AppModel {
             } catch is CancellationError {
                 return
             } catch {
-                guard let self, self.selectedDocument?.id == document.id else {
+                guard let self, self.currentVisualExtractionID == extractionID else {
                     return
                 }
                 visualExtractionError = error.localizedDescription
@@ -902,16 +905,16 @@ final class AppModel {
         }
     }
 
-    private func noteVisualExtractionProgress(_ progress: PageScanProgress, for document: ReaderDocument) {
-        guard selectedDocument?.id == document.id else {
+    private func noteVisualExtractionProgress(_ progress: PageScanProgress, extractionID: UUID) {
+        guard currentVisualExtractionID == extractionID else {
             return
         }
 
         visualExtractionProgress = progress
     }
 
-    private func finishVisualExtraction(for document: ReaderDocument) {
-        guard selectedDocument?.id == document.id else {
+    private func finishVisualExtraction(extractionID: UUID) {
+        guard currentVisualExtractionID == extractionID else {
             return
         }
 
