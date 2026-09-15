@@ -52,6 +52,9 @@ Grounded in what is absent from the targets and in `6c3f0b6`:
   reports when a PDF has no extractable text)
 - In-book EPUB highlight rendering
 - Copying imports into an app-owned library (the library stores original URLs)
+- App Sandbox. If it is ever enabled, `ProviderStatusView.swift:12-21` must
+  call `startAccessingSecurityScopedResource()` on `fileImporter` URLs, or
+  open/extract fails once the importer callback ends.
 
 `docs/plans/` is historical implementation notes, not current product law.
 
@@ -76,7 +79,7 @@ this document does not fix them.
    `ClaudeCodeClient` await a task that never completes. Trigger: launch
    (Claude probe falls through to `/bin/zsh -l -c "claude --version"` at
    `ClaudeCLIProbe.swift:35-38`) or Ask when Claude is the fallback. Effect: a
-   hanging login shell never returns; provider status stays "discovering", the
+   hanging login shell never returns; the status pill stays "Scanning AI", the
    Ask never answers, and the pool thread is lost for the process lifetime.
 4. `HighlightingPDFView.swift:115-146` via `PDFPreviewView.swift:36` — every
    SwiftUI `updateNSView` strips and re-adds all highlight annotations. Trigger:
@@ -102,31 +105,26 @@ this document does not fix them.
    `PDFPreviewView.swift:142-148` then publishes page 0 through
    `updateReadingPosition`, which overwrites the saved position. Trigger:
    quit mid-document, relaunch. Effect: always starts at the beginning.
-9. `ProviderStatusView.swift:12-21` — `fileImporter` never calls
-   `startAccessingSecurityScopedResource()`. Not reachable today: the app is
-   unsandboxed, so importer URLs stay readable after the callback. Precondition
-   if the app is ever sandboxed: without it, open/extract fails once the
-   importer callback ends.
-10. `DocumentLibrary.swift:6-15` stores the original URL only.
-    `AppModel.swift:532-534` skips missing paths with no message. Trigger:
-    move/delete the file, or relaunch. Effect: library silently shrinks.
-11. `OllamaClient.swift:41-43` sorts model names;
+9. `DocumentLibrary.swift:6-15` stores the original URL only.
+   `AppModel.swift:532-534` skips missing paths with no message. Trigger:
+   move/delete the file, or relaunch. Effect: library silently shrinks.
+10. `OllamaClient.swift:41-43` sorts model names;
     `DocumentAssistant.swift:87-88` uses `models[0]`. Trigger: Ask while
     Ollama lists an embed model before a chat model. Effect: generation fails
     or returns garbage (“talk to PDF does not work”).
-12. `ClaudeCodeClient.swift:11-20` puts the whole prompt on `claude -p` argv.
+11. `ClaudeCodeClient.swift:11-20` puts the whole prompt on `claude -p` argv.
     Trigger: a long excerpt. Effect: argument-list too long, or a truncated
     question.
-13. `CoReaderPaths.swift:41-50` treats
+12. `CoReaderPaths.swift:41-50` treats
     `Library/Mobile Documents/com~apple~CloudDocs` as iCloud;
     `ReadingStateStore.swift:17` reads with `Data(contentsOf:)` and no
     `NSFileCoordinator`. Notes markdown is synced (`LiveKnowledgeRepository.swift:8`);
     the SQLite index is local-only (`…:9-16`) with no rebuild-from-markdown.
     Trigger: second Mac, or a dataless placeholder. Effect: hang on launch, or
     notes that exist as files but do not search.
-14. `AppModel.swift:679-680` scopes notes by `lastPathComponent`, not full
+13. `AppModel.swift:679-680` scopes notes by `lastPathComponent`, not full
     path. Trigger: two files named the same. Effect: mixed notes.
-15. `AppModel.swift:615-617` swallows auto-summary errors. Trigger: no model
+14. `AppModel.swift:615-617` swallows auto-summary errors. Trigger: no model
     or a failed generate. Effect: the summary card never appears and does not
     say why.
 
