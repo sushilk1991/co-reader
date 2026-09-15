@@ -118,9 +118,9 @@ listed after item 14 and are not scheduled here.
    still stores original URLs (see Out of scope).
 10. `OllamaModelTag.supportsChat`, `OllamaModelCatalog.chatModelNames` — models are chosen from the tag
     listing's `capabilities` array (`completion` means chat), with a
-    name/family heuristic for older servers that omit it. Local models sort
-    before cloud ones; embedding-only models are skipped and counted in the
-    provider detail. `AIProviderStatus.preferredChatModel` picks the first chat
+    name/family heuristic for older servers that omit it. Embedding-only
+    models are skipped and counted in the provider detail.
+    `AIProviderStatus.preferredChatModel` picks the first chat
     model deterministically; with none, Ask fails with
     `DocumentAssistantError.noChatCapableOllamaModel` and the pill says only
     embedding models are installed.
@@ -171,6 +171,9 @@ Follow-ups noticed while fixing, not built:
   update for the same page, including scrolls that only change the visible
   page set. The failure card is gated on a page change (item 14); the success
   card keeps the older behaviour.
+- `LiveEPUBBookLoader.loadBook` still spawns `ditto` through `Process` with
+  `waitUntilExit()` and no timeout, outside `ShellCommand`. It runs off the
+  MainActor (item 7), so a hung `ditto` pins a pool thread rather than the UI.
 
 Polish that matches “unpolished”: window min size 1120×760
 (`CoReaderApp.body`); inspector and library closed at launch; EPUB

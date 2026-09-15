@@ -852,6 +852,9 @@ final class AppModel {
         totalDocumentPages = nil
         summaryTask?.cancel()
         askTask?.cancel()
+        currentAskID = nil
+        isAskingQuestion = false
+        askProgress = nil
 
         currentPageIndex = readingPositionsByDocument[positionKey(for: document)]
 

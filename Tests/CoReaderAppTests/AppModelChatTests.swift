@@ -145,6 +145,28 @@ struct AppModelChatTests {
         #expect(appModel.chatTranscript.map(\.content) == ["First?", "Second?", "Answer"])
         #expect(capture.capturedQuestions == ["Second?"])
     }
+
+    /// Switching documents while an ask is in flight must leave the new document's
+    /// transcript empty: neither the cancelled marker nor a late answer belongs there.
+    @Test
+    func documentSwitchDropsTheInFlightAsk() async throws {
+        let assistant = GatedAssistant(result: "Answer")
+        let appModel = AppModel(documentAssistant: assistant)
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Distributed Systems.pdf"))
+
+        appModel.chatInput = "What is Raft?"
+        let first = Task { await appModel.askQuestion() }
+        await waitUntil { assistant.callCount == 1 }
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Advanced Algorithms.pdf"))
+        await first.value
+
+        #expect(appModel.chatTranscript.isEmpty)
+        #expect(appModel.isAskingQuestion == false)
+    }
 }
 
 private struct StubDocumentAssistant: DocumentAssisting {
