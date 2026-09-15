@@ -55,7 +55,8 @@ struct KnowledgeRepository {
         }
 
         let storedIDs = Set(storedNotes.map(\.note.id))
-        for noteID in indexedPaths.keys where !storedIDs.contains(noteID) {
+        for (noteID, filePath) in indexedPaths
+        where !storedIDs.contains(noteID) && !FileManager.default.fileExists(atPath: filePath) {
             try index.delete(noteID: noteID)
             changes += 1
         }

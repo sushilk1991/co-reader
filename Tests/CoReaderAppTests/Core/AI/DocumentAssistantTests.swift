@@ -66,10 +66,10 @@ struct DocumentAssistantTests {
         #expect(await ollamaGenerator.callCount == 0)
     }
 
-    /// An embedding-only model that sorts ahead of a chat model must never be picked for
-    /// generation; that was the reported "talk to PDF does not work".
+    /// The probe already filters the listing to chat-capable models; the assistant
+    /// generates with the first one it is handed.
     @Test
-    func answerSkipsEmbeddingOnlyOllamaModels() async throws {
+    func answerUsesFirstListedChatModel() async throws {
         let ollamaGenerator = StubOllamaGenerator(result: "Ollama answer")
         let assistant = DocumentAssistant(
             extractor: StubDocumentContextExtractor(
@@ -86,8 +86,8 @@ struct DocumentAssistantTests {
                 AIProviderStatus(
                     kind: .ollama,
                     isAvailable: true,
-                    detail: "ready",
-                    models: ["all-minilm:latest", "llama3.2", "nomic-embed-text:latest"]
+                    detail: "1 chat model(s). Skipped 2 embedding-only: all-minilm:latest, nomic-embed-text:latest",
+                    models: ["llama3.2"]
                 )
             ],
             scope: .focus

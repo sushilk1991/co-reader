@@ -102,9 +102,10 @@ struct PDFPreviewView: NSViewRepresentable {
             loadedFileURL = normalizedURL
             lastSyncedHighlights = nil
             let document = PDFDocument(url: normalizedURL)
+            beginRestore(pageCount: document?.pageCount ?? 0)
             pdfView.document = document
             parent.onPageCountChange(document?.pageCount ?? 0)
-            beginRestore(in: pdfView)
+            settleRestore(in: pdfView)
             publishSelection(for: pdfView)
             publishReadingPosition(for: pdfView)
         }
@@ -141,9 +142,14 @@ struct PDFPreviewView: NSViewRepresentable {
 
         // MARK: Reading position restore
 
-        private func beginRestore(in pdfView: HighlightingPDFView) {
+        /// Runs before `pdfView.document` is assigned: the setter posts page-changed
+        /// notifications synchronously, and they must already see the restore pending.
+        private func beginRestore(pageCount: Int) {
             restoreTimeoutTask?.cancel()
-            restoreState.begin(target: parent.initialPageIndex, pageCount: pdfView.document?.pageCount ?? 0)
+            restoreState.begin(target: parent.initialPageIndex, pageCount: pageCount)
+        }
+
+        private func settleRestore(in pdfView: HighlightingPDFView) {
             applyRestoreStep(restoreState.notePageChange(currentPageIndex: currentPageIndex(of: pdfView)), in: pdfView)
 
             guard restoreState.isPending else {

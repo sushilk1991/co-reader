@@ -81,6 +81,35 @@ struct KnowledgeIndexRebuildTests {
         #expect(try repository.searchNotes(matching: "answer").isEmpty)
     }
 
+    /// An evicted iCloud placeholder or a hand-edited Metadata block makes a file
+    /// unreadable to the parser while it still exists; that is not "file gone".
+    @Test
+    @MainActor
+    func rebuildKeepsIndexRowsForUnparseableFilesThatStillExist() async throws {
+        let root = try TemporarySandbox()
+        defer { root.cleanup() }
+        let notesDirectory = root.directory.appending(path: "Notes", directoryHint: .isDirectory)
+        let repository = try makeRepository(notesDirectory: notesDirectory, indexName: "index.sqlite")
+        let note = KnowledgeNote(
+            id: UUID(),
+            kind: .note,
+            title: "Kept Note",
+            sourceIdentifier: "/tmp/Book.pdf",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            bulletPoints: ["Survives a rebuild."],
+            highlightExcerpt: "kept",
+            pageIndex: 2,
+            notePreview: "Survives a rebuild."
+        )
+        try repository.save(note: note)
+        try Data("# Edited by hand, metadata block removed".utf8).write(to: repository.noteFileURL(for: note))
+
+        let changes = try await repository.rebuildIndexFromMarkdown()
+
+        #expect(changes == 0)
+        #expect(try repository.searchNotes(matching: "survives").map(\.id) == [note.id])
+    }
+
     @Test
     func markdownRoundTripsEveryField() throws {
         let root = try TemporarySandbox()

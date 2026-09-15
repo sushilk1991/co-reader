@@ -23,6 +23,7 @@ final class AppModel {
     private var lastAutoSummaryKey: String?
     private var visualExtractionTask: Task<Void, Never>?
     private var askTask: Task<Void, Never>?
+    private var currentAskID: UUID?
     private var hasRestoredReadingState = false
     private var canPersistReadingState = true
     private let autoSummaryDelay: Duration
@@ -1069,22 +1070,28 @@ final class AppModel {
     /// extraction between pages or abandon a slow model.
     private func submitQuestion(_ question: String, for document: ReaderDocument, scope: DocumentQueryScope, visualAsset: DocumentVisualAsset?) async {
         askTask?.cancel()
+        let askID = UUID()
+        currentAskID = askID
         let task = Task {
-            await performQuestion(question, for: document, scope: scope, visualAsset: visualAsset)
+            await performQuestion(question, for: document, scope: scope, visualAsset: visualAsset, askID: askID)
         }
         askTask = task
         await task.value
     }
 
-    private func performQuestion(_ question: String, for document: ReaderDocument, scope: DocumentQueryScope, visualAsset: DocumentVisualAsset?) async {
+    /// A superseded ask (another question submitted while this one was in flight)
+    /// must not touch the shared in-progress state the newer ask now owns.
+    private func performQuestion(_ question: String, for document: ReaderDocument, scope: DocumentQueryScope, visualAsset: DocumentVisualAsset?, askID: UUID) async {
         chatError = nil
         chatInput = ""
         isAskingQuestion = true
         askProgress = nil
         chatTranscript.append(ChatMessage(role: .user, content: question))
         defer {
-            isAskingQuestion = false
-            askProgress = nil
+            if currentAskID == askID {
+                isAskingQuestion = false
+                askProgress = nil
+            }
         }
 
         let enrichedQuestion = chatTranscript.count > 1 ? questionWithConversationContext(question) : question
@@ -1101,7 +1108,11 @@ final class AppModel {
                 visualAsset: visualAsset,
                 onProgress: { [weak self] progress in
                     Task { @MainActor in
-                        self?.askProgress = progress
+                        guard let self, self.currentAskID == askID else {
+                            return
+                        }
+
+                        self.askProgress = progress
                     }
                 }
             )
@@ -1113,7 +1124,11 @@ final class AppModel {
             } catch {
                 chatError = "Answer generated, but note capture failed: \(error.localizedDescription)"
             }
-        } catch is CancellationError {
+        } catch where error is CancellationError || (error as? URLError)?.code == .cancelled {
+            guard currentAskID == askID else {
+                return
+            }
+
             chatTranscript.append(ChatMessage(role: .assistant, content: Self.cancelledAnswerText))
         } catch {
             chatError = error.localizedDescription
