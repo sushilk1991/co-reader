@@ -207,6 +207,69 @@ struct AppModelReadingStateTests {
         #expect(appModel.autoSummaryError == nil)
     }
 
+    /// Ollama up with only embedding models is "no model" for item 14: the notice
+    /// is derived, nothing is cached against the page, and pulling a chat model
+    /// then refreshing lets the page be summarised.
+    @Test
+    func noChatModelNoticeClearsWhenAChatModelAppears() async throws {
+        let ollama = ScriptedOllamaProbe(result: .available(models: [], skippedEmbeddingModels: ["nomic-embed-text"]))
+        let appModel = AppModel(
+            providerDiscovery: AIProviderDiscovery(ollamaProbe: ollama, claudeProbe: OfflineClaudeCLIProbe()),
+            documentAssistant: FixedAnswerAssistant(result: "Page three says hello."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+        await appModel.refreshProviders()
+
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+
+        #expect(appModel.autoSummaryUnavailableReason == DocumentAssistantError.noChatCapableOllamaModel.localizedDescription)
+        #expect(appModel.autoSummaryError == nil)
+
+        ollama.result = .available(models: ["llama3.2"])
+        await appModel.refreshProviders()
+
+        #expect(appModel.autoSummaryUnavailableReason == nil)
+
+        appModel.updateReadingPosition(currentPageIndex: 4, visiblePageIndexes: [4])
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+        await waitUntil { appModel.autoSummary != nil }
+
+        #expect(appModel.autoSummary != nil)
+        #expect(appModel.autoSummaryError == nil)
+    }
+
+    /// Switching documents and coming back counts as returning to the page, so a
+    /// recorded failure on that page is shown again.
+    @Test
+    func recordedFailureReappearsAfterSwitchingDocuments() async throws {
+        let appModel = AppModel(
+            documentAssistant: ThrowingAssistant(message: "Ollama generation failed."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/First.pdf"))
+        let first = try #require(appModel.selectedDocument)
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+        await waitUntil { appModel.autoSummaryError != nil }
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Second.pdf"))
+        #expect(appModel.autoSummaryError == nil)
+
+        appModel.selectDocument(first)
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+
+        #expect(appModel.autoSummaryError == "Auto-summary failed: Ollama generation failed.")
+    }
+
     /// The two cards differ in kind: a generation failure is an event on one page
     /// and can be dismissed; provider unavailability is app state and cannot.
     @Test

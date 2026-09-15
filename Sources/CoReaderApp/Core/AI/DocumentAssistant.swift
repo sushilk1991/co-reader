@@ -24,6 +24,8 @@ struct DocumentAssistant: DocumentAssisting {
         visualAsset: DocumentVisualAsset? = nil,
         onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void = { _ in }
     ) async throws -> String {
+        let target = try executionTarget(from: providerStatuses, requiresVision: visualAsset != nil)
+
         // Text extraction walks every page synchronously; keep it off the calling
         // actor and let task cancellation stop it between pages.
         let extractor = extractor
@@ -41,19 +43,13 @@ struct DocumentAssistant: DocumentAssisting {
         }
         let prompt = buildPrompt(question: question, scope: scope, context: context, visualAsset: visualAsset)
 
-        switch preferredExecutionTarget(from: providerStatuses, requiresVision: visualAsset != nil) {
+        switch target {
         case let .ollama(model):
             onProgress(.generating(model: model))
             return try await ollamaGenerator.generate(model: model, prompt: prompt, imageData: visualAsset?.imageData)
         case .claude:
             onProgress(.generating(model: AIProviderKind.claudeCLI.displayName))
             return try await claudeGenerator.generate(prompt: prompt)
-        case .unavailableVision:
-            throw DocumentAssistantError.noVisionCapableProvider
-        case .noChatModel:
-            throw DocumentAssistantError.noChatCapableOllamaModel
-        case .unavailable:
-            throw DocumentAssistantError.noAvailableProvider
         }
     }
 
@@ -85,35 +81,26 @@ struct DocumentAssistant: DocumentAssisting {
         """
     }
 
-    private func preferredExecutionTarget(from providerStatuses: [AIProviderStatus], requiresVision: Bool) -> ExecutionTarget {
+    /// Decided before any page text is read, so an unanswerable request fails
+    /// without paying for the extraction.
+    private func executionTarget(from providerStatuses: [AIProviderStatus], requiresVision: Bool) throws -> ExecutionTarget {
         if requiresVision {
-            if let model = providerStatuses
-                .compactMap(\.preferredVisionModel)
-                .first {
-                return .ollama(model: model)
+            guard let model = providerStatuses.compactMap(\.preferredVisionModel).first else {
+                throw DocumentAssistantError.noVisionCapableProvider
             }
 
-            return .unavailableVision
+            return .ollama(model: model)
         }
 
-        let hasClaude = providerStatuses.contains { $0.kind == .claudeCLI && $0.isAvailable }
-
-        if let ollama = providerStatuses.first(where: { $0.kind == .ollama && $0.isAvailable }) {
-            if let model = ollama.preferredChatModel {
-                return .ollama(model: model)
-            }
-
-            // Ollama is up but only has embedding models: say so unless Claude can step in.
-            if !hasClaude {
-                return .noChatModel
-            }
+        if let blocker = providerStatuses.textAnswerBlocker {
+            throw blocker
         }
 
-        if hasClaude {
-            return .claude
+        if let model = providerStatuses.compactMap(\.preferredChatModel).first {
+            return .ollama(model: model)
         }
 
-        return .unavailable
+        return .claude
     }
 
     private func visualPromptContext(for visualAsset: DocumentVisualAsset?) -> String {
@@ -132,7 +119,4 @@ struct DocumentAssistant: DocumentAssisting {
 private enum ExecutionTarget {
     case ollama(model: String)
     case claude
-    case unavailableVision
-    case noChatModel
-    case unavailable
 }

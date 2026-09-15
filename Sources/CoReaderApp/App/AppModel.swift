@@ -144,11 +144,11 @@ final class AppModel {
     /// the card is built, never stored, so it clears as soon as a provider appears.
     var autoSummaryUnavailableReason: String? {
         guard hasLoadedProviders, !isDiscoveringProviders,
-              !providerStatuses.contains(where: \.isAvailable) else {
+              let blocker = providerStatuses.textAnswerBlocker else {
             return nil
         }
 
-        return DocumentAssistantError.noAvailableProvider.localizedDescription
+        return blocker.localizedDescription
     }
 
     /// The card over the current page: a summary, one page's recorded failure, or
@@ -761,7 +761,7 @@ final class AppModel {
             guard !Task.isCancelled else { return }
             guard self.selectedDocument?.id == document.id,
                   self.currentPageIndex == pageIndex else { return }
-            guard providerStatuses.contains(where: \.isAvailable) else { return }
+            guard providerStatuses.textAnswerBlocker == nil else { return }
 
             do {
                 let answer = try await documentAssistant.answer(
@@ -846,6 +846,7 @@ final class AppModel {
         savedHighlights = []
         autoSummary = nil
         autoSummaryError = nil
+        lastAutoSummaryKey = nil
         autoConceptTags = []
         totalDocumentPages = nil
         summaryTask?.cancel()
