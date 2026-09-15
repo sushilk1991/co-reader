@@ -117,6 +117,34 @@ struct AppModelChatTests {
         #expect(appModel.isAskingQuestion == false)
         #expect(appModel.chatTranscript.map(\.content) == ["First?", "Second?", "Second answer"])
     }
+
+    /// A superseded ask whose provider finishes anyway must not answer under the
+    /// newer question or capture a note for it.
+    @Test
+    func supersededAnswerThatCompletesAnywayIsDropped() async throws {
+        let capture = StubKnowledgeCapture()
+        let assistant = GatedAssistant(result: "Answer", cancellation: .completesAnyway)
+        let appModel = AppModel(documentAssistant: assistant, knowledgeCapture: capture)
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Distributed Systems.pdf"))
+
+        appModel.chatInput = "First?"
+        let first = Task { await appModel.askQuestion() }
+        await waitUntil { assistant.callCount == 1 }
+
+        appModel.chatInput = "Second?"
+        let second = Task { await appModel.askQuestion() }
+        await waitUntil { assistant.callCount == 2 }
+
+        assistant.release()
+        await first.value
+        await second.value
+
+        #expect(appModel.chatTranscript.map(\.content) == ["First?", "Second?", "Answer"])
+        #expect(capture.capturedQuestions == ["Second?"])
+    }
 }
 
 private struct StubDocumentAssistant: DocumentAssisting {
@@ -159,40 +187,5 @@ private struct ThrowingURLCancelledAssistant: DocumentAssisting {
         onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void
     ) async throws -> String {
         throw URLError(.cancelled)
-    }
-}
-
-/// Holds every answer until `release()`; cancellation ends the wait early.
-@MainActor
-private final class GatedAssistant: DocumentAssisting {
-    private(set) var callCount = 0
-    private var isReleased = false
-    private let result: String
-
-    init(result: String) {
-        self.result = result
-    }
-
-    func release() {
-        isReleased = true
-    }
-
-    func answer(
-        question: String,
-        for document: ReaderDocument,
-        providerStatuses: [AIProviderStatus],
-        scope: DocumentQueryScope,
-        selection: DocumentSelection?,
-        currentPageIndex: Int?,
-        visiblePageIndexes: [Int],
-        visualAsset: DocumentVisualAsset?,
-        onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void
-    ) async throws -> String {
-        callCount += 1
-        while !isReleased {
-            try await Task.sleep(for: .milliseconds(5))
-        }
-
-        return result
     }
 }

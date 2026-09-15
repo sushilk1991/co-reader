@@ -787,7 +787,7 @@ final class AppModel {
                     autoSummary = summary
                     autoConceptTags = tags
                 }
-            } catch is CancellationError {
+            } catch where Self.isCancellation(error) {
                 return
             } catch {
                 // One attempt per page: a failing provider must not be hit on every scroll.
@@ -1116,6 +1116,10 @@ final class AppModel {
                     }
                 }
             )
+            guard currentAskID == askID else {
+                return
+            }
+
             chatTranscript.append(ChatMessage(role: .assistant, content: Self.stripThinkingTags(answer)))
 
             do {
@@ -1124,7 +1128,7 @@ final class AppModel {
             } catch {
                 chatError = "Answer generated, but note capture failed: \(error.localizedDescription)"
             }
-        } catch where error is CancellationError || (error as? URLError)?.code == .cancelled {
+        } catch where Self.isCancellation(error) {
             guard currentAskID == askID else {
                 return
             }
@@ -1137,6 +1141,13 @@ final class AppModel {
     }
 
     private static let cancelledAnswerText = "Cancelled before an answer arrived."
+
+    /// Cancellation arrives in three shapes: `CancellationError` from `BlockingWork`
+    /// and `ProcessCommandRunner`, `URLError(.cancelled)` from `URLSession`, and a
+    /// provider error thrown after the task itself was cancelled.
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
+    }
 }
 
 enum ReaderWorkspaceError: LocalizedError {

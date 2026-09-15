@@ -270,6 +270,37 @@ struct AppModelReadingStateTests {
         #expect(appModel.autoSummaryError == "Auto-summary failed: Ollama generation failed.")
     }
 
+    /// Scrolling past a page while Ollama is mid-generation cancels the request as
+    /// `URLError(.cancelled)`; that is not a failure of the page and must not be cached.
+    @Test
+    func scrollingAwayMidSummaryRecordsNoPageFailure() async throws {
+        let assistant = GatedAssistant(result: "Page says hello.", cancellation: .throwsURLCancelled)
+        let appModel = AppModel(
+            documentAssistant: assistant,
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+        await waitUntil { assistant.callCount == 1 }
+        appModel.updateReadingPosition(currentPageIndex: 4, visiblePageIndexes: [4])
+        await waitUntil { assistant.callCount == 2 }
+        assistant.release()
+        await waitUntil { appModel.autoSummary != nil }
+
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+        await waitUntil { assistant.callCount == 3 }
+
+        #expect(appModel.autoSummaryError == nil)
+        #expect(assistant.callCount == 3)
+    }
+
     /// The two cards differ in kind: a generation failure is an event on one page
     /// and can be dismissed; provider unavailability is app state and cannot.
     @Test

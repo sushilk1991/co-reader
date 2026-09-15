@@ -129,6 +129,63 @@ final class CountingThrowingAssistant: DocumentAssisting {
     }
 }
 
+/// Holds every answer until `release()`. What a cancelled wait does mirrors the
+/// real providers: `BlockingWork`/`ProcessCommandRunner` throw `CancellationError`,
+/// `URLSession` throws `URLError(.cancelled)`, and a provider that already finished
+/// completes anyway.
+@MainActor
+final class GatedAssistant: DocumentAssisting {
+    enum CancellationBehaviour {
+        case throwsCancellationError
+        case throwsURLCancelled
+        case completesAnyway
+    }
+
+    private(set) var callCount = 0
+    private var isReleased = false
+    private let result: String
+    private let cancellation: CancellationBehaviour
+
+    init(result: String, cancellation: CancellationBehaviour = .throwsCancellationError) {
+        self.result = result
+        self.cancellation = cancellation
+    }
+
+    func release() {
+        isReleased = true
+    }
+
+    func answer(
+        question: String,
+        for document: ReaderDocument,
+        providerStatuses: [AIProviderStatus],
+        scope: DocumentQueryScope,
+        selection: DocumentSelection?,
+        currentPageIndex: Int?,
+        visiblePageIndexes: [Int],
+        visualAsset: DocumentVisualAsset?,
+        onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void
+    ) async throws -> String {
+        callCount += 1
+        while !isReleased {
+            do {
+                try await Task.sleep(for: .milliseconds(5))
+            } catch {
+                switch cancellation {
+                case .throwsCancellationError:
+                    throw error
+                case .throwsURLCancelled:
+                    throw URLError(.cancelled)
+                case .completesAnyway:
+                    await Task.yield()
+                }
+            }
+        }
+
+        return result
+    }
+}
+
 /// Polls `condition` until it holds or `timeout` passes, for work the model finishes
 /// on a later main-actor turn (visual extraction, auto-summary).
 @MainActor
