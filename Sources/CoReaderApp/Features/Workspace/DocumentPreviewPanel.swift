@@ -185,6 +185,10 @@ struct DocumentPreviewPanel: View {
             return .failure(failure)
         }
 
+        if let reason = appModel.autoSummaryUnavailableReason {
+            return .failure(reason)
+        }
+
         return nil
     }
 }

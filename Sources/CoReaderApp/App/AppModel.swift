@@ -140,6 +140,17 @@ final class AppModel {
         return "AI Offline"
     }
 
+    /// Why no page can be summarised right now. Read from provider state whenever
+    /// the card is built, never stored, so it clears as soon as a provider appears.
+    var autoSummaryUnavailableReason: String? {
+        guard hasLoadedProviders, !isDiscoveringProviders,
+              !providerStatuses.contains(where: \.isAvailable) else {
+            return nil
+        }
+
+        return DocumentAssistantError.noAvailableProvider.localizedDescription
+    }
+
     /// Why the readiness pill says what it says: one line per offline provider.
     var providerReadinessDetail: String {
         if isDiscoveringProviders {
@@ -732,12 +743,9 @@ final class AppModel {
             guard !Task.isCancelled else { return }
             guard self.selectedDocument?.id == document.id,
                   self.currentPageIndex == pageIndex else { return }
+            guard providerStatuses.contains(where: \.isAvailable) else { return }
 
             do {
-                guard providerStatuses.contains(where: \.isAvailable) else {
-                    throw DocumentAssistantError.noAvailableProvider
-                }
-
                 let answer = try await documentAssistant.answer(
                     question: "Provide a concise 2-3 sentence summary of this section's key points. Then on a new line starting with 'Tags:', list 3-5 key concepts as comma-separated tags.",
                     for: document,

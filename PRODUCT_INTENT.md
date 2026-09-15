@@ -140,11 +140,14 @@ listed after item 14 and are not scheduled here.
     notes are scoped by the full standardized path. Notes saved before this
     change under the bare filename are still shown for a file with that name
     (`AppModel.swift:882`), so old notes do not disappear.
-14. `AppModel.swift:707-767` — a failed auto-summary, including no provider
-    being available, shows a dismissable "Auto-summary failed: <reason>" card
-    in place of the summary. Each page is attempted once; the stored reason is
-    shown again only when the reader returns to the page, not on scrolls
-    within it, and the page is not retried.
+14. `AppModel.swift:718-782` — two kinds of auto-summary failure. A failed
+    generation is a property of the page: it shows a dismissable
+    "Auto-summary failed: <reason>" card, is cached per page, attempted once,
+    shown again only when the reader returns to the page, and never retried.
+    No provider being available is not a property of the page and is not
+    cached: the card derives that message from the live provider status
+    (`autoSummaryUnavailableReason`), so it clears the moment a provider is
+    detected, and pages read meanwhile are summarised on their next visit.
 
 Follow-ups noticed while fixing, not built:
 

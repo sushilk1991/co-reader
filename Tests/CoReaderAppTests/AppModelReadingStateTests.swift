@@ -172,27 +172,39 @@ struct AppModelReadingStateTests {
         #expect(appModel.autoSummaryError == nil)
     }
 
-    /// Item 14 names "no model" as a trigger: with no provider available the page
-    /// itself must say why there is no summary.
+    /// Provider availability is not a property of the page, so it is never cached
+    /// with the page: once a provider appears, the notice clears and the page is
+    /// summarised on its next visit.
     @Test
-    func autoSummaryReportsMissingProvider() async throws {
+    func providerNoticeClearsWhenAProviderAppears() async throws {
+        let ollama = ScriptedOllamaProbe(result: .unavailable(reason: "Ollama server did not respond"))
         let appModel = AppModel(
-            documentAssistant: FixedAnswerAssistant(result: "Unused"),
+            providerDiscovery: AIProviderDiscovery(ollamaProbe: ollama, claudeProbe: OfflineClaudeCLIProbe()),
+            documentAssistant: FixedAnswerAssistant(result: "Page one says hello."),
             knowledgeCapture: NoOpKnowledgeCaptureDouble(),
             noteStore: InMemoryNoteStore(),
             visualExtractor: EmptyVisualExtractor(),
             autoSummaryDelay: .zero
         )
-        appModel.providerStatuses = [
-            AIProviderStatus(kind: .ollama, isAvailable: false, detail: "offline", models: [])
-        ]
         appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+        await appModel.refreshProviders()
+
+        appModel.updateReadingPosition(currentPageIndex: 1, visiblePageIndexes: [1])
+
+        #expect(appModel.autoSummaryUnavailableReason == DocumentAssistantError.noAvailableProvider.localizedDescription)
+        #expect(appModel.autoSummaryError == nil)
+
+        ollama.result = .available(models: ["llama3.2"])
+        await appModel.refreshProviders()
+
+        #expect(appModel.autoSummaryUnavailableReason == nil)
 
         appModel.updateReadingPosition(currentPageIndex: 2, visiblePageIndexes: [2])
-        await waitUntil { appModel.autoSummaryError != nil }
+        appModel.updateReadingPosition(currentPageIndex: 1, visiblePageIndexes: [1])
+        await waitUntil { appModel.autoSummary != nil }
 
-        #expect(appModel.autoSummaryError == "Auto-summary failed: \(DocumentAssistantError.noAvailableProvider.localizedDescription)")
-        #expect(appModel.autoSummary == nil)
+        #expect(appModel.autoSummary != nil)
+        #expect(appModel.autoSummaryError == nil)
     }
 
     private func makeAppModel(readingStateStore: ReadingStateStore) -> AppModel {
@@ -223,5 +235,24 @@ struct TemporarySandbox {
 
     func cleanup() {
         try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+@MainActor
+private final class ScriptedOllamaProbe: OllamaProbing {
+    var result: AIProviderProbeResult
+
+    init(result: AIProviderProbeResult) {
+        self.result = result
+    }
+
+    func probe() async throws -> AIProviderProbeResult {
+        result
+    }
+}
+
+private struct OfflineClaudeCLIProbe: ClaudeCLIProbing {
+    func probe() async throws -> AIProviderProbeResult {
+        .unavailable(reason: "claude not found on PATH")
     }
 }
