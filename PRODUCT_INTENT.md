@@ -62,7 +62,7 @@ Grounded in what is absent from the targets and in `6c3f0b6`:
 
 ## Current state (not polished)
 
-Unit tests pass (`swift test`: 90 Swift Testing tests on 2026-09-15). That does
+Unit tests pass (`swift test`, 2026-09-15). That does
 not mean the GUI is stable. The fourteen findings below came from reading this
 tree, not from a crash log. Each was fixed on 2026-09-15 with a failing test
 first where a unit test could express the rule; the entries now describe what
@@ -91,10 +91,10 @@ listed after item 14 and are not scheduled here.
    annotations by highlight id and only adds, removes, or replaces the ones
    that changed; `PDFPreviewView.swift` skips the call when the highlight list
    is unchanged. Scrolling no longer mutates PDFKit annotations.
-5. `EPUBPreviewView.Coordinator` (`configure`, `detach`, `dismantleNSView`) — the web view registers a
-   `WeakScriptMessageProxy` instead of the coordinator, and
-   `dismantleNSView` removes the handler and user scripts, so the coordinator
-   and the `AppModel` closures it captured are released with the view.
+5. `EPUBPreviewView.Coordinator` (`configure`, `detach`, `dismantleNSView`) — the web view registers the
+   coordinator directly as the script message handler, and `dismantleNSView`
+   calls `detach`, which removes the handler and user scripts, so the
+   coordinator and the `AppModel` closures it captured are released with the view.
 6. `DocumentAssistant.answer`, `LiveDocumentContextExtractor.extractPDFPageTexts` —
    the PDF `page.string` walk runs through `BlockingWork.run`, checks
    cancellation per page, and reports `PageScanProgress`; the chat panel shows
