@@ -117,6 +117,36 @@ struct AppModelReadingStateTests {
         #expect(appModel.autoSummaryError == nil)
     }
 
+    /// One attempt per page: leaving and coming back shows the stored reason again
+    /// instead of going silent or hitting the provider a second time.
+    @Test
+    func autoSummaryFailureIsShownAgainOnRevisit() async throws {
+        let assistant = CountingThrowingAssistant(message: "Ollama generation failed.")
+        let appModel = AppModel(
+            documentAssistant: assistant,
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5])
+        await waitUntil { appModel.autoSummaryError != nil }
+
+        appModel.updateReadingPosition(currentPageIndex: 6, visiblePageIndexes: [6])
+        await waitUntil { assistant.callCount == 2 }
+        #expect(appModel.autoSummaryError == "Auto-summary failed: Ollama generation failed.")
+
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5])
+
+        #expect(appModel.autoSummaryError == "Auto-summary failed: Ollama generation failed.")
+        #expect(assistant.callCount == 2)
+    }
+
     private func makeAppModel(readingStateStore: ReadingStateStore) -> AppModel {
         AppModel(
             documentAssistant: FixedAnswerAssistant(result: "Unused"),

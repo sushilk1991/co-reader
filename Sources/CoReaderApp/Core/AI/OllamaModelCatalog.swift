@@ -7,8 +7,6 @@ struct OllamaModelTag: Equatable, Sendable {
     /// Empty when the server predates the field; the name heuristic applies then.
     let capabilities: [String]
     let family: String?
-    /// Cloud-backed models carry `remote_host` in the listing; local ones do not.
-    let isRemote: Bool
 
     static let completionCapability = "completion"
     private static let embeddingFamilies: Set<String> = ["bert", "nomic-bert"]
@@ -51,19 +49,14 @@ enum OllamaModelCatalog {
             return OllamaModelTag(
                 name: name,
                 capabilities: entry["capabilities"] as? [String] ?? [],
-                family: details?["family"] as? String,
-                isRemote: entry["remote_host"] != nil
+                family: details?["family"] as? String
             )
         }
     }
 
-    /// Chat-capable names, local models before cloud ones, each group sorted so the
-    /// pick is deterministic across probes.
+    /// Chat-capable names, sorted so the pick is deterministic across probes.
     static func chatModelNames(in tags: [OllamaModelTag]) -> [String] {
-        let chatTags = tags.filter(\.supportsChat)
-        let local = chatTags.filter { !$0.isRemote }.map(\.name).sorted()
-        let remote = chatTags.filter(\.isRemote).map(\.name).sorted()
-        return local + remote
+        tags.filter(\.supportsChat).map(\.name).sorted()
     }
 
     static func skippedModelNames(in tags: [OllamaModelTag]) -> [String] {

@@ -141,8 +141,9 @@ listed after item 14 and are not scheduled here.
     change under the bare filename are still shown for a file with that name
     (`AppModel.swift:882`), so old notes do not disappear.
 14. `AppModel.swift:707-762` — a failed auto-summary shows a dismissable
-    "Auto-summary failed: <reason>" card in place of the summary, once per
-    page; the page is not retried until it is left and revisited.
+    "Auto-summary failed: <reason>" card in place of the summary. Each page
+    is attempted once; revisiting the page shows the stored reason again
+    rather than retrying.
 
 Follow-ups noticed while fixing, not built:
 

@@ -4,14 +4,13 @@ import Testing
 
 struct OllamaClientTests {
     /// The tag listing's `capabilities` array is authoritative: embedding-only
-    /// models are excluded, local chat models come before cloud ones, and the
-    /// order is stable across probes.
+    /// models are excluded and the order is stable across probes.
     @Test
-    func probeListsChatCapableModelsLocalFirst() async throws {
+    func probeListsChatCapableModelsSorted() async throws {
         let payload = """
         {"models":[
           {"name":"nomic-embed-text:latest","details":{"family":"nomic-bert"},"capabilities":["embedding"]},
-          {"name":"qwen3-coder:480b-cloud","remote_host":"https://ollama.com","details":{"family":"qwen3"},"capabilities":["completion","tools"]},
+          {"name":"qwen3-coder:480b-cloud","details":{"family":"qwen3"},"capabilities":["completion","tools"]},
           {"name":"llama3.2:latest","details":{"family":"llama"},"capabilities":["completion"]},
           {"name":"all-minilm:latest","details":{"family":"bert"},"capabilities":["embedding"]},
           {"name":"gemma3:4b","details":{"family":"gemma3"},"capabilities":["completion","vision"]}
@@ -65,17 +64,26 @@ struct OllamaClientTests {
         #expect(detail.contains("nomic-embed-text:latest"))
     }
 
+    /// The status carries the catalog's filtered list, so the first entry is a
+    /// chat model even when an embedding model sorts ahead of it by name.
     @Test
-    func preferredChatModelSkipsEmbeddingNamesInStatus() {
-        let status = AIProviderStatus(
-            kind: .ollama,
-            isAvailable: true,
-            detail: "ready",
-            models: ["all-minilm:latest", "llama3.2", "nomic-embed-text:latest"]
-        )
+    func preferredChatModelIsFirstCatalogChatModel() throws {
+        let payload = """
+        {"models":[
+          {"name":"all-minilm:latest","details":{"family":"bert"},"capabilities":["embedding"]},
+          {"name":"llama3.2","details":{"family":"llama"},"capabilities":["completion"]},
+          {"name":"nomic-embed-text:latest","details":{"family":"nomic-bert"},"capabilities":["embedding"]}
+        ]}
+        """
+        let models = OllamaModelCatalog.chatModelNames(in: try OllamaModelCatalog.decodeTags(from: Data(payload.utf8)))
+        let status = AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: models)
 
         #expect(status.preferredChatModel == "llama3.2")
-        #expect(AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["all-minilm:latest"]).preferredChatModel == nil)
+
+        let embeddingOnly = try OllamaModelCatalog.decodeTags(from: Data("""
+        {"models":[{"name":"all-minilm:latest","capabilities":["embedding"]}]}
+        """.utf8))
+        #expect(AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: OllamaModelCatalog.chatModelNames(in: embeddingOnly)).preferredChatModel == nil)
         #expect(AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "ready", models: ["llama3.2"]).preferredChatModel == nil)
     }
 }

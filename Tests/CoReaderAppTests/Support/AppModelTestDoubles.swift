@@ -103,6 +103,32 @@ struct ThrowingAssistant: DocumentAssisting {
     }
 }
 
+/// Failing assistant that counts its calls, for checking that a page is attempted once.
+@MainActor
+final class CountingThrowingAssistant: DocumentAssisting {
+    private(set) var callCount = 0
+    private let message: String
+
+    init(message: String) {
+        self.message = message
+    }
+
+    func answer(
+        question: String,
+        for document: ReaderDocument,
+        providerStatuses: [AIProviderStatus],
+        scope: DocumentQueryScope,
+        selection: DocumentSelection?,
+        currentPageIndex: Int?,
+        visiblePageIndexes: [Int],
+        visualAsset: DocumentVisualAsset?,
+        onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void
+    ) async throws -> String {
+        callCount += 1
+        throw NSError(domain: "CoReader.Tests", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+}
+
 /// Polls `condition` until it holds or `timeout` passes, for work the model finishes
 /// on a later main-actor turn (visual extraction, auto-summary).
 @MainActor

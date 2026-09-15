@@ -196,7 +196,6 @@ private struct EPUBSectionWebView: NSViewRepresentable {
         var chapterIndex: Int
         private var loadedSectionURL: URL?
         private weak var userContentController: WKUserContentController?
-        private var messageProxy: WeakScriptMessageProxy?
         private let onSelectionChange: @MainActor (DocumentSelection?) -> Void
         private let onNavigateToSectionURL: @MainActor (URL) -> Void
 
@@ -228,11 +227,7 @@ private struct EPUBSectionWebView: NSViewRepresentable {
                     forMainFrameOnly: true
                 )
             )
-            // The controller retains its handler; go through a weak proxy so the web
-            // view cannot keep this coordinator (and the AppModel closures it holds) alive.
-            let proxy = WeakScriptMessageProxy(target: self)
-            messageProxy = proxy
-            userContentController.add(proxy, name: Self.selectionHandlerName)
+            userContentController.add(self, name: Self.selectionHandlerName)
         }
 
         /// Unregisters the message handler and scripts when SwiftUI tears the view down.
@@ -240,7 +235,6 @@ private struct EPUBSectionWebView: NSViewRepresentable {
             userContentController?.removeScriptMessageHandler(forName: Self.selectionHandlerName)
             userContentController?.removeAllUserScripts()
             userContentController = nil
-            messageProxy = nil
         }
 
         func updateIfNeeded(webView: WKWebView, sectionURL: URL, readAccessURL: URL) {

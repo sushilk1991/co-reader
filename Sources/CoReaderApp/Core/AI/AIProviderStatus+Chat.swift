@@ -1,11 +1,10 @@
 extension AIProviderStatus {
-    /// First chat-capable Ollama model. The probe already drops embedding-only tags;
-    /// the name check guards statuses built without it (tests, older cached state).
+    /// First Ollama model; the probe lists only chat-capable ones (`OllamaModelCatalog`).
     var preferredChatModel: String? {
         guard kind == .ollama, isAvailable else {
             return nil
         }
 
-        return models.first { !OllamaModelTag.looksEmbeddingOnly(name: $0) }
+        return models.first
     }
 }

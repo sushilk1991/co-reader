@@ -16,8 +16,8 @@ final class AppModel {
     private var documentLibrary = DocumentLibrary()
     private var readingPositionsByDocument: [String: Int] = [:]
     private var readingStateSaveTask: Task<Void, Never>?
-    private var summarizedPageKeys: Set<String> = []
     private var pageSummaries: [String: String] = [:]
+    private var pageSummaryFailures: [String: String] = [:]
     private var conceptsByPage: [String: [String]] = [:]
     private var summaryTask: Task<Void, Never>?
     private var lastAutoSummaryKey: String?
@@ -718,7 +718,10 @@ final class AppModel {
             return
         }
 
-        guard !summarizedPageKeys.contains(key) else { return }
+        if let failure = pageSummaryFailures[key] {
+            autoSummaryError = failure
+            return
+        }
 
         summaryTask?.cancel()
         summaryTask = Task {
@@ -743,7 +746,6 @@ final class AppModel {
 
                 let cleanedAnswer = Self.stripThinkingTags(answer)
                 let (summary, tags) = parseSummaryAndTags(cleanedAnswer)
-                summarizedPageKeys.insert(key)
                 pageSummaries[key] = summary
                 conceptsByPage[key] = tags
 
@@ -756,10 +758,11 @@ final class AppModel {
                 return
             } catch {
                 // One attempt per page: a failing provider must not be hit on every scroll.
-                summarizedPageKeys.insert(key)
+                let failure = "Auto-summary failed: \(error.localizedDescription)"
+                pageSummaryFailures[key] = failure
                 guard self.selectedDocument?.id == document.id,
                       self.currentPageIndex == pageIndex else { return }
-                autoSummaryError = "Auto-summary failed: \(error.localizedDescription)"
+                autoSummaryError = failure
             }
         }
     }
