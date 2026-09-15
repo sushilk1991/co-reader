@@ -151,6 +151,24 @@ final class AppModel {
         return DocumentAssistantError.noAvailableProvider.localizedDescription
     }
 
+    /// The card over the current page: a summary, one page's recorded failure, or
+    /// the live no-provider notice, in that order.
+    var summaryCardContent: PageSummaryCardContent? {
+        if let autoSummary {
+            return .summary(autoSummary)
+        }
+
+        if let autoSummaryError {
+            return .failure(autoSummaryError)
+        }
+
+        if let autoSummaryUnavailableReason {
+            return .unavailable(autoSummaryUnavailableReason)
+        }
+
+        return nil
+    }
+
     /// Why the readiness pill says what it says: one line per offline provider.
     var providerReadinessDetail: String {
         if isDiscoveringProviders {

@@ -1,8 +1,32 @@
 import SwiftUI
 
+/// What the card over the page says. A failure is an event that happened to one
+/// page and can be dismissed; `unavailable` states current app state (no provider),
+/// so there is nothing to dismiss and it stays as long as it is true.
 enum PageSummaryCardContent: Equatable {
     case summary(String)
     case failure(String)
+    case unavailable(String)
+
+    var title: String {
+        switch self {
+        case .summary:
+            "Auto-Summary"
+        case .failure:
+            "Auto-Summary Failed"
+        case .unavailable:
+            "Auto-Summary Unavailable"
+        }
+    }
+
+    var isDismissable: Bool {
+        switch self {
+        case .summary, .failure:
+            true
+        case .unavailable:
+            false
+        }
+    }
 }
 
 struct PageSummaryCard: View {
@@ -16,7 +40,7 @@ struct PageSummaryCard: View {
                 .foregroundStyle(tint)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                Text(content.title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(ReaderTheme.smoke)
 
@@ -28,14 +52,16 @@ struct PageSummaryCard: View {
 
             Spacer()
 
-            Button {
-                onDismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(ReaderTheme.smoke)
+            if content.isDismissable {
+                Button {
+                    onDismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(ReaderTheme.smoke)
+                }
+                .buttonStyle(.borderless)
             }
-            .buttonStyle(.borderless)
         }
         .padding(14)
         .frame(maxWidth: 420, alignment: .leading)
@@ -47,18 +73,9 @@ struct PageSummaryCard: View {
         .shadow(color: ReaderTheme.shadow, radius: 12, y: 6)
     }
 
-    private var title: String {
-        switch content {
-        case .summary:
-            "Auto-Summary"
-        case .failure:
-            "Auto-Summary Failed"
-        }
-    }
-
     private var message: String {
         switch content {
-        case let .summary(text), let .failure(text):
+        case let .summary(text), let .failure(text), let .unavailable(text):
             text
         }
     }
@@ -69,6 +86,8 @@ struct PageSummaryCard: View {
             "sparkles"
         case .failure:
             "exclamationmark.triangle"
+        case .unavailable:
+            "bolt.slash"
         }
     }
 
@@ -78,6 +97,8 @@ struct PageSummaryCard: View {
             ReaderTheme.teal
         case .failure:
             ReaderTheme.rose
+        case .unavailable:
+            ReaderTheme.smoke
         }
     }
 
@@ -87,6 +108,8 @@ struct PageSummaryCard: View {
             ReaderTheme.tealSoft
         case .failure:
             ReaderTheme.roseSoft
+        case .unavailable:
+            ReaderTheme.lineSoft
         }
     }
 }

@@ -148,6 +148,10 @@ listed after item 14 and are not scheduled here.
     cached: the card derives that message from the live provider status
     (`autoSummaryUnavailableReason`), so it clears the moment a provider is
     detected, and pages read meanwhile are summarised on their next visit.
+    Only the failure card is dismissable: it reports an event. The
+    "Auto-Summary Unavailable" notice states current app state, has no
+    dismiss control, and stays exactly as long as it is true
+    (`PageSummaryCardContent`).
 
 Follow-ups noticed while fixing, not built:
 

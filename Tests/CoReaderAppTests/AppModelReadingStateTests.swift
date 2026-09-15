@@ -207,6 +207,41 @@ struct AppModelReadingStateTests {
         #expect(appModel.autoSummaryError == nil)
     }
 
+    /// The two cards differ in kind: a generation failure is an event on one page
+    /// and can be dismissed; provider unavailability is app state and cannot.
+    @Test
+    func summaryCardSeparatesFailureFromUnavailable() async throws {
+        let appModel = AppModel(
+            providerDiscovery: AIProviderDiscovery(
+                ollamaProbe: ScriptedOllamaProbe(result: .unavailable(reason: "Ollama server did not respond")),
+                claudeProbe: OfflineClaudeCLIProbe()
+            ),
+            documentAssistant: ThrowingAssistant(message: "Ollama generation failed."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+        await appModel.refreshProviders()
+
+        let unavailable = try #require(appModel.summaryCardContent)
+        #expect(unavailable == .unavailable(DocumentAssistantError.noAvailableProvider.localizedDescription))
+        #expect(unavailable.title == "Auto-Summary Unavailable")
+        #expect(unavailable.isDismissable == false)
+
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.updateReadingPosition(currentPageIndex: 2, visiblePageIndexes: [2])
+        await waitUntil { appModel.autoSummaryError != nil }
+
+        let failure = try #require(appModel.summaryCardContent)
+        #expect(failure == .failure("Auto-summary failed: Ollama generation failed."))
+        #expect(failure.title == "Auto-Summary Failed")
+        #expect(failure.isDismissable)
+    }
+
     private func makeAppModel(readingStateStore: ReadingStateStore) -> AppModel {
         AppModel(
             documentAssistant: FixedAnswerAssistant(result: "Unused"),

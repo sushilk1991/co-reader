@@ -116,7 +116,7 @@ struct DocumentPreviewPanel: View {
                         )
 
                         VStack(alignment: .leading, spacing: 12) {
-                            if let content = summaryCardContent {
+                            if let content = appModel.summaryCardContent {
                                 PageSummaryCard(content: content, onDismiss: { appModel.dismissAutoSummary() })
                                     .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
@@ -126,7 +126,7 @@ struct DocumentPreviewPanel: View {
                             }
                         }
                         .padding(20)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: summaryCardContent != nil)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: appModel.summaryCardContent != nil)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -172,23 +172,5 @@ struct DocumentPreviewPanel: View {
         }
         .padding(4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    /// The page count now arrives from the preview views themselves, which already
-    /// open the document; loading it a second time here blocked the main thread.
-    private var summaryCardContent: PageSummaryCardContent? {
-        if let summary = appModel.autoSummary {
-            return .summary(summary)
-        }
-
-        if let failure = appModel.autoSummaryError {
-            return .failure(failure)
-        }
-
-        if let reason = appModel.autoSummaryUnavailableReason {
-            return .failure(reason)
-        }
-
-        return nil
     }
 }
