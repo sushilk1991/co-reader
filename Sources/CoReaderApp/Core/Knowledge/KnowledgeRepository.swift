@@ -54,26 +54,15 @@ struct KnowledgeRepository {
             changes += 1
         }
 
+        // On macOS 15 an evicted iCloud note is a dataless file at its own path, so a
+        // plain existence check is sufficient; no `.Name.md.icloud` sibling is produced.
         let storedIDs = Set(storedNotes.map(\.note.id))
         for (noteID, filePath) in indexedPaths
-        where !storedIDs.contains(noteID) && !Self.markdownIsPresent(atPath: filePath) {
+        where !storedIDs.contains(noteID) && !FileManager.default.fileExists(atPath: filePath) {
             try index.delete(noteID: noteID)
             changes += 1
         }
 
         return changes
-    }
-
-    private static let iCloudPlaceholderSuffix = ".icloud"
-
-    /// An evicted iCloud file leaves a `.Name.md.icloud` sibling in place of `Name.md`;
-    /// the note still exists, so its index row stays.
-    private static func markdownIsPresent(atPath path: String) -> Bool {
-        let fileURL = URL(fileURLWithPath: path)
-        let placeholderURL = fileURL
-            .deletingLastPathComponent()
-            .appending(path: ".\(fileURL.lastPathComponent)\(iCloudPlaceholderSuffix)")
-
-        return FileManager.default.fileExists(atPath: path) || FileManager.default.fileExists(atPath: placeholderURL.path)
     }
 }
