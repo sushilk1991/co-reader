@@ -140,10 +140,11 @@ listed after item 14 and are not scheduled here.
     notes are scoped by the full standardized path. Notes saved before this
     change under the bare filename are still shown for a file with that name
     (`AppModel.swift:882`), so old notes do not disappear.
-14. `AppModel.swift:707-762` — a failed auto-summary shows a dismissable
-    "Auto-summary failed: <reason>" card in place of the summary. Each page
-    is attempted once; revisiting the page shows the stored reason again
-    rather than retrying.
+14. `AppModel.swift:707-767` — a failed auto-summary, including no provider
+    being available, shows a dismissable "Auto-summary failed: <reason>" card
+    in place of the summary. Each page is attempted once; the stored reason is
+    shown again only when the reader returns to the page, not on scrolls
+    within it, and the page is not retried.
 
 Follow-ups noticed while fixing, not built:
 
@@ -156,6 +157,10 @@ Follow-ups noticed while fixing, not built:
 - `LiveDocumentHighlightStore.swift:32` still reads highlight files with
   `Data(contentsOf:)` on the MainActor, which is the same iCloud placeholder
   hazard as item 12 for highlights.
+- `AppModel.swift:715` re-shows a dismissed summary card on every position
+  update for the same page, including scrolls that only change the visible
+  page set. The failure card is gated on a page change (item 14); the success
+  card keeps the older behaviour.
 
 Polish that matches “unpolished”: window min size 1120×760
 (`CoReaderApp.swift:10`); inspector and library closed at launch; EPUB

@@ -707,7 +707,8 @@ final class AppModel {
     private func triggerAutoSummary(document: ReaderDocument, pageIndex: Int) {
         let key = "\(document.id)-\(pageIndex)"
 
-        if key != lastAutoSummaryKey {
+        let isNewPage = key != lastAutoSummaryKey
+        if isNewPage {
             lastAutoSummaryKey = key
             autoSummaryError = nil
         }
@@ -719,7 +720,9 @@ final class AppModel {
         }
 
         if let failure = pageSummaryFailures[key] {
-            autoSummaryError = failure
+            if isNewPage {
+                autoSummaryError = failure
+            }
             return
         }
 
@@ -729,9 +732,12 @@ final class AppModel {
             guard !Task.isCancelled else { return }
             guard self.selectedDocument?.id == document.id,
                   self.currentPageIndex == pageIndex else { return }
-            guard providerStatuses.contains(where: \.isAvailable) else { return }
 
             do {
+                guard providerStatuses.contains(where: \.isAvailable) else {
+                    throw DocumentAssistantError.noAvailableProvider
+                }
+
                 let answer = try await documentAssistant.answer(
                     question: "Provide a concise 2-3 sentence summary of this section's key points. Then on a new line starting with 'Tags:', list 3-5 key concepts as comma-separated tags.",
                     for: document,

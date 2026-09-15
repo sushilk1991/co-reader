@@ -147,6 +147,54 @@ struct AppModelReadingStateTests {
         #expect(assistant.callCount == 2)
     }
 
+    /// Scrolling within the same page republishes the position; a dismissed
+    /// failure card must stay dismissed until the reader changes page.
+    @Test
+    func dismissedAutoSummaryFailureStaysDismissedOnSamePage() async throws {
+        let appModel = AppModel(
+            documentAssistant: ThrowingAssistant(message: "Ollama generation failed."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5])
+        await waitUntil { appModel.autoSummaryError != nil }
+        appModel.dismissAutoSummary()
+
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5, 6])
+
+        #expect(appModel.autoSummaryError == nil)
+    }
+
+    /// Item 14 names "no model" as a trigger: with no provider available the page
+    /// itself must say why there is no summary.
+    @Test
+    func autoSummaryReportsMissingProvider() async throws {
+        let appModel = AppModel(
+            documentAssistant: FixedAnswerAssistant(result: "Unused"),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: false, detail: "offline", models: [])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+
+        appModel.updateReadingPosition(currentPageIndex: 2, visiblePageIndexes: [2])
+        await waitUntil { appModel.autoSummaryError != nil }
+
+        #expect(appModel.autoSummaryError == "Auto-summary failed: \(DocumentAssistantError.noAvailableProvider.localizedDescription)")
+        #expect(appModel.autoSummary == nil)
+    }
+
     private func makeAppModel(readingStateStore: ReadingStateStore) -> AppModel {
         AppModel(
             documentAssistant: FixedAnswerAssistant(result: "Unused"),
