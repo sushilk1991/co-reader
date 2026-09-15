@@ -81,8 +81,8 @@ struct KnowledgeIndexRebuildTests {
         #expect(try repository.searchNotes(matching: "answer").isEmpty)
     }
 
-    /// An evicted iCloud placeholder or a hand-edited Metadata block makes a file
-    /// unreadable to the parser while it still exists; that is not "file gone".
+    /// A hand-edited Metadata block makes a file unreadable to the parser while
+    /// it still exists; that is not "file gone".
     @Test
     @MainActor
     func rebuildKeepsIndexRowsForUnparseableFilesThatStillExist() async throws {
@@ -108,6 +108,37 @@ struct KnowledgeIndexRebuildTests {
 
         #expect(changes == 0)
         #expect(try repository.searchNotes(matching: "survives").map(\.id) == [note.id])
+    }
+
+    /// iCloud eviction replaces `Name.md` with a `.Name.md.icloud` sibling; the
+    /// note still exists and must stay searchable.
+    @Test
+    @MainActor
+    func rebuildKeepsIndexRowsForEvictedICloudNotes() async throws {
+        let root = try TemporarySandbox()
+        defer { root.cleanup() }
+        let notesDirectory = root.directory.appending(path: "Notes", directoryHint: .isDirectory)
+        let repository = try makeRepository(notesDirectory: notesDirectory, indexName: "index.sqlite")
+        let note = KnowledgeNote(
+            id: UUID(),
+            kind: .note,
+            title: "Evicted Note",
+            sourceIdentifier: "/tmp/Book.pdf",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            bulletPoints: ["Lives in the cloud."],
+            highlightExcerpt: "evicted",
+            pageIndex: 2,
+            notePreview: "Lives in the cloud."
+        )
+        try repository.save(note: note)
+        let fileURL = repository.noteFileURL(for: note)
+        let placeholderURL = fileURL.deletingLastPathComponent().appending(path: ".\(fileURL.lastPathComponent).icloud")
+        try FileManager.default.moveItem(at: fileURL, to: placeholderURL)
+
+        let changes = try await repository.rebuildIndexFromMarkdown()
+
+        #expect(changes == 0)
+        #expect(try repository.searchNotes(matching: "cloud").map(\.id) == [note.id])
     }
 
     @Test

@@ -235,7 +235,7 @@ struct AppModelReaderStateTests {
                 id: UUID(),
                 kind: .highlight,
                 title: "Book One Highlight",
-                sourceIdentifier: "Book One.pdf",
+                sourceIdentifier: "/tmp/Book One.pdf",
                 createdAt: Date(),
                 bulletPoints: ["Old note"],
                 highlightExcerpt: "Old quote",
@@ -248,7 +248,7 @@ struct AppModelReaderStateTests {
                 id: UUID(),
                 kind: .highlight,
                 title: "Book Two Highlight",
-                sourceIdentifier: "Book Two.pdf",
+                sourceIdentifier: "/tmp/Book Two.pdf",
                 createdAt: Date().addingTimeInterval(1),
                 bulletPoints: ["Fresh note"],
                 highlightExcerpt: "Fresh quote",
@@ -268,7 +268,7 @@ struct AppModelReaderStateTests {
         #expect(appModel.chatTranscript.isEmpty)
         #expect(appModel.noteDraft.isEmpty)
         #expect(appModel.savedNotes.count == 1)
-        #expect(appModel.savedNotes[0].sourceIdentifier == "Book Two.pdf")
+        #expect(appModel.savedNotes[0].sourceIdentifier == "/tmp/Book Two.pdf")
         #expect(appModel.savedHighlights.count == 1)
         #expect(appModel.savedHighlights[0].pageIndex == 9)
         #expect(appModel.savedHighlights[0].quotedText == "Fresh quote")

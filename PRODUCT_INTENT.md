@@ -137,9 +137,9 @@ listed after item 14 and are not scheduled here.
     another Mac become searchable. The storage strategy (which files sync) is
     unchanged and remains an open question.
 13. `ReaderDocument.noteSourceIdentifier`, used by `ChatKnowledgeCapture` —
-    notes are scoped by the full standardized path. Notes saved before this
-    change under the bare filename are still shown for a file with that name
-    (`ReaderDocument.legacyNoteSourceIdentifier` in `AppModel.refreshSavedNotesForSelectedDocument`), so old notes do not disappear.
+    notes are scoped by the full standardized path. Notes saved under the old
+    filename scope are not listed under a document but remain findable through
+    search.
 14. `AppModel.triggerAutoSummary` — two kinds of auto-summary failure. A failed
     generation is a property of the page: it shows a dismissable
     "Auto-summary failed: <reason>" card, is cached per page, attempted once,

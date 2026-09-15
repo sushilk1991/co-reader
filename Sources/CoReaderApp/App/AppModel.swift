@@ -928,14 +928,7 @@ final class AppModel {
             return
         }
 
-        // Notes saved before scoping moved to the full path carry only the filename;
-        // they stay visible under any document with that name.
-        let scoped = try noteStore.notes(forSource: selectedDocument.noteSourceIdentifier, limit: Self.savedNotesLimit)
-        let legacy = try noteStore.notes(forSource: selectedDocument.legacyNoteSourceIdentifier, limit: Self.savedNotesLimit)
-        var seenIDs: Set<UUID> = []
-        savedNotes = (scoped + legacy)
-            .filter { seenIDs.insert($0.id).inserted }
-            .sorted { $0.createdAt > $1.createdAt }
+        savedNotes = try noteStore.notes(forSource: selectedDocument.noteSourceIdentifier, limit: Self.savedNotesLimit)
     }
 
     private func refreshSavedHighlightsForSelectedDocument() throws {
@@ -1019,12 +1012,10 @@ final class AppModel {
     }
 
     private func documentTitle(for summary: KnowledgeNoteSummary) -> String {
-        if let selectedDocument,
-           [selectedDocument.noteSourceIdentifier, selectedDocument.legacyNoteSourceIdentifier].contains(summary.sourceIdentifier) {
+        if let selectedDocument, selectedDocument.noteSourceIdentifier == summary.sourceIdentifier {
             return selectedDocument.title
         }
 
-        // Works for both a full path and a legacy bare filename.
         return URL(fileURLWithPath: summary.sourceIdentifier)
             .deletingPathExtension()
             .lastPathComponent
