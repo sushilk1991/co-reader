@@ -25,13 +25,13 @@ via `make build-and-run-background`, which launches the Debug `.app` through
   `Sources/CoReaderApp/` or `Tests/CoReaderAppTests/`, rerun
   `xcodegen generate --spec project.yml` so the Xcode target lists it.
 - Keep `Package.swift` and `project.yml` version/deployment fields in
-  agreement when you bump them (`SWIFT_VERSION` vs `swift-tools-version`,
-  macOS 15).
+  agreement when you bump them (Swift 6 language mode, macOS 15).
 - Tests are Swift Testing (`import Testing`, `@Test`), e.g.
   `Tests/CoReaderAppTests/AppModelReaderStateTests.swift`.
 - Orchestration lives in `Sources/CoReaderApp/App/AppModel.swift`. Views
-  under `Features/` call that model; they do not open SQLite, PDF streams,
-  or HTTP themselves.
+  under `Features/` call that model; they do not open SQLite or HTTP
+  themselves. PDFKit's `PDFDocument(url:)` in the preview views is the one
+  existing exception.
 - Local providers only (Ollama, Claude CLI in `AIProviderKind`). Keep
   `project.yml` `platform: macOS`.
 
