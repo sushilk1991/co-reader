@@ -3,16 +3,17 @@
 Last audited from source: 2026-09-15 (v0.2.1, marketing version in `project.yml`).
 
 CoReader is a local macOS reader for PDFs and EPUBs: highlight passages, take
-notes, and ask questions against the open document. Captain direction: a reader
-where those three jobs work, and the app stops crashing and feeling unpolished.
+notes, and ask questions against the open document. Confirmed direction: a
+reader where those three jobs work, and the app stops crashing and feeling
+unpolished.
 
 Who it is for is not confirmed. Code and copy assume a single person studying
 dense documents on a Mac, with Ollama or Claude CLI already installed. That
 audience is an open question, not a market claim.
 
-## Confirmed direction
+## User-Confirmed Direction
 
-From the captain:
+From Sushil:
 
 - Notes, highlights, and talking to a PDF are the product.
 - The current app crashes and has many things that do not work.
@@ -42,7 +43,7 @@ library, a PDFKit or EPUB/WebKit preview, and a collapsible inspector:
 Library, inspector, and command palette (`⌘K`) start closed. Chat, notes, and
 highlights are behind **Show Tools**.
 
-## Out of scope until the captain says otherwise
+## Out of scope until Sushil says otherwise
 
 Grounded in what is absent from the targets and in `6c3f0b6`:
 
@@ -86,8 +87,11 @@ this document does not fix them.
    scrolling (page-change mutates `AppModel`, so the representable updates).
    Effect: PDFKit mutation during layout, flicker, hang.
 5. `EPUBPreviewView.swift:199-217` — `WKUserContentController.add` has no
-   matching `removeScriptMessageHandler` in `deinit`. Trigger: close or switch
-   an EPUB. Effect: WebKit teardown crash.
+   matching `removeScriptMessageHandler` in `deinit`. The coordinator holds the
+   controller only weakly (`:185`), so there is no cycle and no dangling call.
+   Trigger: close or switch an EPUB. Effect: the handler registration outlives
+   the representable, so the coordinator and the `AppModel` closures it
+   captured stay alive until WebKit releases the web view.
 6. `LiveDocumentContextExtractor.swift:52-63` — Ask walks `page.string` for
    every PDF page synchronously inside nonisolated `DocumentAssistant.answer`,
    before the LLM `await`. That pins a cooperative-pool thread, not the main
@@ -134,9 +138,9 @@ highlights are list rows only (`SelectionActionBar.swift:46-54`); highlight
 annotation colors are fixed calibrated RGB (`ReaderHighlightColor.swift:23-34`),
 not appearance-adaptive.
 
-## Open questions for the captain
+## Open Questions For Sushil
 
-1. Who is the first user — the captain only, students, or researchers?
+1. Who is the first user — Sushil only, students, or researchers?
 2. Keep AI local-only (Ollama + Claude CLI), or bring back a localhost
    OpenAI-compatible adapter?
 3. Is iCloud Drive a real requirement, or should notes and reading state stay
