@@ -21,25 +21,37 @@ struct DocumentAssistant: DocumentAssisting {
         selection: DocumentSelection? = nil,
         currentPageIndex: Int? = nil,
         visiblePageIndexes: [Int] = [],
-        visualAsset: DocumentVisualAsset? = nil
+        visualAsset: DocumentVisualAsset? = nil,
+        onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void = { _ in }
     ) async throws -> String {
-        let context = try extractor.extractContext(
-            for: document,
-            question: question,
-            scope: scope,
-            selection: selection,
-            currentPageIndex: currentPageIndex,
-            visiblePageIndexes: visiblePageIndexes
-        )
+        // Text extraction walks every page synchronously; keep it off the calling
+        // actor and let task cancellation stop it between pages.
+        let extractor = extractor
+        let context = try await BlockingWork.run { isCancelled in
+            try extractor.extractContext(
+                for: document,
+                question: question,
+                scope: scope,
+                selection: selection,
+                currentPageIndex: currentPageIndex,
+                visiblePageIndexes: visiblePageIndexes,
+                isCancelled: isCancelled,
+                onProgress: { onProgress(.extractingContext($0)) }
+            )
+        }
         let prompt = buildPrompt(question: question, scope: scope, context: context, visualAsset: visualAsset)
 
         switch preferredExecutionTarget(from: providerStatuses, requiresVision: visualAsset != nil) {
         case let .ollama(model):
+            onProgress(.generating(model: model))
             return try await ollamaGenerator.generate(model: model, prompt: prompt, imageData: visualAsset?.imageData)
         case .claude:
+            onProgress(.generating(model: AIProviderKind.claudeCLI.displayName))
             return try await claudeGenerator.generate(prompt: prompt)
         case .unavailableVision:
             throw DocumentAssistantError.noVisionCapableProvider
+        case .noChatModel:
+            throw DocumentAssistantError.noChatCapableOllamaModel
         case .unavailable:
             throw DocumentAssistantError.noAvailableProvider
         }
@@ -84,11 +96,20 @@ struct DocumentAssistant: DocumentAssisting {
             return .unavailableVision
         }
 
-        if let ollama = providerStatuses.first(where: { $0.kind == .ollama && $0.isAvailable && !$0.models.isEmpty }) {
-            return .ollama(model: ollama.models[0])
+        let hasClaude = providerStatuses.contains { $0.kind == .claudeCLI && $0.isAvailable }
+
+        if let ollama = providerStatuses.first(where: { $0.kind == .ollama && $0.isAvailable }) {
+            if let model = ollama.preferredChatModel {
+                return .ollama(model: model)
+            }
+
+            // Ollama is up but only has embedding models: say so unless Claude can step in.
+            if !hasClaude {
+                return .noChatModel
+            }
         }
 
-        if providerStatuses.contains(where: { $0.kind == .claudeCLI && $0.isAvailable }) {
+        if hasClaude {
             return .claude
         }
 
@@ -112,5 +133,6 @@ private enum ExecutionTarget {
     case ollama(model: String)
     case claude
     case unavailableVision
+    case noChatModel
     case unavailable
 }

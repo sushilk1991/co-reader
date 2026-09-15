@@ -83,6 +83,49 @@ final class SQLiteKnowledgeIndex {
         try bind(searchTerm, at: 2, to: statement)
         sqlite3_bind_int(statement, 3, Int32(limit))
 
+        return readSummaries(from: statement)
+    }
+
+    func notes(forSource sourceIdentifier: String, limit: Int = 20) throws -> [KnowledgeNoteSummary] {
+        let sql = """
+        SELECT id, note_kind, title, source_identifier, created_at, file_path, excerpt, page_index, note_preview
+        FROM notes
+        WHERE source_identifier = ?
+        ORDER BY created_at DESC
+        LIMIT ?;
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw error(message: "Failed to prepare knowledge source lookup.")
+        }
+        defer { sqlite3_finalize(statement) }
+
+        try bind(sourceIdentifier, at: 1, to: statement)
+        sqlite3_bind_int(statement, 2, Int32(limit))
+
+        return readSummaries(from: statement)
+    }
+
+    /// Every indexed note and the markdown path it was indexed from.
+    func indexedFilePathsByNoteID() throws -> [UUID: String] {
+        let sql = "SELECT id, file_path FROM notes;"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw error(message: "Failed to prepare knowledge listing.")
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var paths: [UUID: String] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let id = UUID(uuidString: text(at: 0, from: statement)) else { continue }
+            paths[id] = text(at: 1, from: statement)
+        }
+
+        return paths
+    }
+
+    private func readSummaries(from statement: OpaquePointer?) -> [KnowledgeNoteSummary] {
         var summaries: [KnowledgeNoteSummary] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             let idText = text(at: 0, from: statement)

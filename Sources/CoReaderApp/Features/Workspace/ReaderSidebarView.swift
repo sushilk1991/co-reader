@@ -51,9 +51,13 @@ struct ReaderSidebarView: View {
 
                     if appModel.importedDocuments.isEmpty {
                         ContentUnavailableView(
-                            "No reading queue yet",
+                            appModel.isRestoringReadingState ? "Restoring your last session" : "No reading queue yet",
                             systemImage: "books.vertical",
-                            description: Text("Import a PDF or EPUB to begin a focused session.")
+                            description: Text(
+                                appModel.isRestoringReadingState
+                                    ? "Reading the saved library and positions."
+                                    : "Import a PDF or EPUB to begin a focused session."
+                            )
                         )
                         .frame(maxWidth: .infinity)
                     }

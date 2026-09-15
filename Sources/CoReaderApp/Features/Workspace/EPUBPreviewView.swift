@@ -4,8 +4,10 @@ import WebKit
 
 struct EPUBPreviewView: View {
     let fileURL: URL
+    let initialSectionIndex: Int?
     let onSelectionChange: @MainActor (DocumentSelection?) -> Void
     let onReadingPositionChange: @MainActor (Int?, [Int]) -> Void
+    let onSectionCountChange: @MainActor (Int) -> Void
     let loader: any EPUBBookLoading
 
     @State private var book: EPUBBook?
@@ -15,13 +17,17 @@ struct EPUBPreviewView: View {
 
     init(
         fileURL: URL,
+        initialSectionIndex: Int? = nil,
         onSelectionChange: @escaping @MainActor (DocumentSelection?) -> Void,
         onReadingPositionChange: @escaping @MainActor (Int?, [Int]) -> Void,
+        onSectionCountChange: @escaping @MainActor (Int) -> Void = { _ in },
         loader: any EPUBBookLoading = LiveEPUBBookLoader()
     ) {
         self.fileURL = fileURL
+        self.initialSectionIndex = initialSectionIndex
         self.onSelectionChange = onSelectionChange
         self.onReadingPositionChange = onReadingPositionChange
+        self.onSectionCountChange = onSectionCountChange
         self.loader = loader
     }
 
@@ -134,8 +140,11 @@ struct EPUBPreviewView: View {
                 return
             }
             book = loadedBook
-            currentSectionIndex = 0
-            onReadingPositionChange(0, [0])
+            // Reopen on the saved chapter; a chapter that no longer exists falls back to the first.
+            let restoredIndex = min(max(initialSectionIndex ?? 0, 0), max(loadedBook.sections.count - 1, 0))
+            currentSectionIndex = restoredIndex
+            onSectionCountChange(loadedBook.sections.count)
+            onReadingPositionChange(restoredIndex, [restoredIndex])
         } catch {
             guard loadState.accepts(requestID: requestID, fileURL: fileURL.standardizedFileURL) else {
                 return
@@ -178,11 +187,16 @@ private struct EPUBSectionWebView: NSViewRepresentable {
         context.coordinator.updateIfNeeded(webView: nsView, sectionURL: sectionURL, readAccessURL: readAccessURL)
     }
 
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var chapterIndex: Int
         private var loadedSectionURL: URL?
         private weak var userContentController: WKUserContentController?
+        private var messageProxy: WeakScriptMessageProxy?
         private let onSelectionChange: @MainActor (DocumentSelection?) -> Void
         private let onNavigateToSectionURL: @MainActor (URL) -> Void
 
@@ -197,7 +211,7 @@ private struct EPUBSectionWebView: NSViewRepresentable {
         }
 
         func configure(userContentController: WKUserContentController) {
-            self.userContentController?.removeScriptMessageHandler(forName: Self.selectionHandlerName)
+            detach()
             self.userContentController = userContentController
             userContentController.removeAllUserScripts()
             userContentController.addUserScript(
@@ -214,7 +228,19 @@ private struct EPUBSectionWebView: NSViewRepresentable {
                     forMainFrameOnly: true
                 )
             )
-            userContentController.add(self, name: Self.selectionHandlerName)
+            // The controller retains its handler; go through a weak proxy so the web
+            // view cannot keep this coordinator (and the AppModel closures it holds) alive.
+            let proxy = WeakScriptMessageProxy(target: self)
+            messageProxy = proxy
+            userContentController.add(proxy, name: Self.selectionHandlerName)
+        }
+
+        /// Unregisters the message handler and scripts when SwiftUI tears the view down.
+        func detach() {
+            userContentController?.removeScriptMessageHandler(forName: Self.selectionHandlerName)
+            userContentController?.removeAllUserScripts()
+            userContentController = nil
+            messageProxy = nil
         }
 
         func updateIfNeeded(webView: WKWebView, sectionURL: URL, readAccessURL: URL) {

@@ -1,21 +1,26 @@
 import SwiftUI
 
+enum PageSummaryCardContent: Equatable {
+    case summary(String)
+    case failure(String)
+}
+
 struct PageSummaryCard: View {
-    let summary: String
+    let content: PageSummaryCardContent
     let onDismiss: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "sparkles")
+            Image(systemName: iconName)
                 .font(.subheadline)
-                .foregroundStyle(ReaderTheme.teal)
+                .foregroundStyle(tint)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Auto-Summary")
+                Text(title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(ReaderTheme.smoke)
 
-                Text(summary)
+                Text(message)
                     .font(.subheadline)
                     .foregroundStyle(ReaderTheme.ink)
                     .lineLimit(6)
@@ -37,8 +42,51 @@ struct PageSummaryCard: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(ReaderTheme.tealSoft, lineWidth: 1)
+                .stroke(softTint, lineWidth: 1)
         )
         .shadow(color: ReaderTheme.shadow, radius: 12, y: 6)
+    }
+
+    private var title: String {
+        switch content {
+        case .summary:
+            "Auto-Summary"
+        case .failure:
+            "Auto-Summary Failed"
+        }
+    }
+
+    private var message: String {
+        switch content {
+        case let .summary(text), let .failure(text):
+            text
+        }
+    }
+
+    private var iconName: String {
+        switch content {
+        case .summary:
+            "sparkles"
+        case .failure:
+            "exclamationmark.triangle"
+        }
+    }
+
+    private var tint: Color {
+        switch content {
+        case .summary:
+            ReaderTheme.teal
+        case .failure:
+            ReaderTheme.rose
+        }
+    }
+
+    private var softTint: Color {
+        switch content {
+        case .summary:
+            ReaderTheme.tealSoft
+        case .failure:
+            ReaderTheme.roseSoft
+        }
     }
 }

@@ -3,11 +3,13 @@ import SwiftUI
 
 struct PDFPreviewView: NSViewRepresentable {
     let fileURL: URL
+    let initialPageIndex: Int?
     let highlights: [PDFDocumentHighlight]
     let isHighlightToolEnabled: Bool
     let selectedHighlightColor: ReaderHighlightColor
     let onSelectionChange: @MainActor (DocumentSelection?) -> Void
     let onReadingPositionChange: @MainActor (Int?, [Int]) -> Void
+    let onPageCountChange: @MainActor (Int) -> Void
     let onHighlightCapture: @MainActor ([PDFDocumentHighlightDraft]) -> Void
     let onHighlightRemoval: @MainActor (UUID) -> Void
 
@@ -38,8 +40,14 @@ struct PDFPreviewView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject {
+        /// Upper bound on waiting for PDFKit to confirm the restored page.
+        private static let restoreSettleTimeout: Duration = .milliseconds(1_500)
+
         var parent: PDFPreviewView
         private var loadedFileURL: URL?
+        private var lastSyncedHighlights: [PDFDocumentHighlight]?
+        private var restoreState = ReadingPositionRestoreState()
+        private var restoreTimeoutTask: Task<Void, Never>?
 
         init(parent: PDFPreviewView) {
             self.parent = parent
@@ -76,6 +84,13 @@ struct PDFPreviewView: NSViewRepresentable {
                 name: Notification.Name.PDFViewDocumentChanged,
                 object: pdfView
             )
+            pdfView.onLayout = { [weak self, weak pdfView] in
+                guard let self, let pdfView else {
+                    return
+                }
+
+                self.applyRestoreStep(self.restoreState.noteLayout(currentPageIndex: self.currentPageIndex(of: pdfView)), in: pdfView)
+            }
         }
 
         func updateDocumentIfNeeded(_ fileURL: URL, in pdfView: HighlightingPDFView) {
@@ -85,7 +100,11 @@ struct PDFPreviewView: NSViewRepresentable {
             }
 
             loadedFileURL = normalizedURL
-            pdfView.document = PDFDocument(url: normalizedURL)
+            lastSyncedHighlights = nil
+            let document = PDFDocument(url: normalizedURL)
+            pdfView.document = document
+            parent.onPageCountChange(document?.pageCount ?? 0)
+            beginRestore(in: pdfView)
             publishSelection(for: pdfView)
             publishReadingPosition(for: pdfView)
         }
@@ -109,8 +128,55 @@ struct PDFPreviewView: NSViewRepresentable {
             }
         }
 
+        /// `updateNSView` runs on every observable change the panel reads; only touch
+        /// PDFKit when the highlight list itself changed.
         func syncHighlights(in pdfView: HighlightingPDFView) {
+            guard lastSyncedHighlights != parent.highlights else {
+                return
+            }
+
+            lastSyncedHighlights = parent.highlights
             pdfView.syncManagedHighlights(parent.highlights)
+        }
+
+        // MARK: Reading position restore
+
+        private func beginRestore(in pdfView: HighlightingPDFView) {
+            restoreTimeoutTask?.cancel()
+            restoreState.begin(target: parent.initialPageIndex, pageCount: pdfView.document?.pageCount ?? 0)
+            applyRestoreStep(restoreState.notePageChange(currentPageIndex: currentPageIndex(of: pdfView)), in: pdfView)
+
+            guard restoreState.isPending else {
+                return
+            }
+
+            restoreTimeoutTask = Task { [weak self, weak pdfView] in
+                try? await Task.sleep(for: Self.restoreSettleTimeout)
+                guard !Task.isCancelled, let self, let pdfView else {
+                    return
+                }
+
+                self.applyRestoreStep(self.restoreState.expire(), in: pdfView)
+            }
+        }
+
+        private func applyRestoreStep(_ action: ReadingPositionRestoreState.Action, in pdfView: HighlightingPDFView) {
+            switch action {
+            case .none:
+                return
+            case let .goTo(pageIndex):
+                guard let page = pdfView.document?.page(at: pageIndex) else {
+                    return
+                }
+                pdfView.go(to: page)
+            case .settled, .gaveUp:
+                restoreTimeoutTask?.cancel()
+                publishReadingPosition(for: pdfView)
+            }
+        }
+
+        private func currentPageIndex(of pdfView: PDFView) -> Int? {
+            pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) }
         }
 
         private func publishSelection(for pdfView: PDFView) {
@@ -139,13 +205,18 @@ struct PDFPreviewView: NSViewRepresentable {
             parent.onSelectionChange(selection)
         }
 
+        /// Suppressed while a restore is pending, otherwise PDFKit's interim page 0
+        /// would overwrite the saved position.
         private func publishReadingPosition(for pdfView: PDFView) {
-            let currentPageIndex = pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) }
+            guard !restoreState.isPending else {
+                return
+            }
+
             let visiblePageIndexes = pdfView.visiblePages
                 .compactMap { pdfView.document?.index(for: $0) }
                 .sorted()
 
-            parent.onReadingPositionChange(currentPageIndex, visiblePageIndexes)
+            parent.onReadingPositionChange(currentPageIndex(of: pdfView), visiblePageIndexes)
         }
 
         @objc
@@ -159,7 +230,12 @@ struct PDFPreviewView: NSViewRepresentable {
 
         @objc
         private func handlePageChanged(_ notification: Notification) {
-            guard let pdfView = notification.object as? PDFView else {
+            guard let pdfView = notification.object as? HighlightingPDFView else {
+                return
+            }
+
+            if restoreState.isPending {
+                applyRestoreStep(restoreState.notePageChange(currentPageIndex: currentPageIndex(of: pdfView)), in: pdfView)
                 return
             }
 
@@ -181,6 +257,7 @@ struct PDFPreviewView: NSViewRepresentable {
                 return
             }
 
+            lastSyncedHighlights = nil
             publishSelection(for: pdfView)
             publishReadingPosition(for: pdfView)
             syncHighlights(in: pdfView)

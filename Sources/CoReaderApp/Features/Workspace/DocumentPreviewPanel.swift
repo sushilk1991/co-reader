@@ -1,5 +1,4 @@
 import Observation
-import PDFKit
 import SwiftUI
 
 struct DocumentPreviewPanel: View {
@@ -61,6 +60,7 @@ struct DocumentPreviewPanel: View {
                             case .pdf:
                                 PDFPreviewView(
                                     fileURL: document.fileURL,
+                                    initialPageIndex: appModel.readingPosition(for: document),
                                     highlights: appModel.pdfDocumentHighlights,
                                     isHighlightToolEnabled: appModel.isHighlightToolEnabled,
                                     selectedHighlightColor: appModel.selectedHighlightColor,
@@ -73,6 +73,9 @@ struct DocumentPreviewPanel: View {
                                             visiblePageIndexes: visiblePageIndexes
                                         )
                                     },
+                                    onPageCountChange: { pageCount in
+                                        appModel.updateTotalPages(pageCount)
+                                    },
                                     onHighlightCapture: { drafts in
                                         appModel.capturePDFHighlights(drafts)
                                     },
@@ -83,6 +86,7 @@ struct DocumentPreviewPanel: View {
                             case .epub:
                                 EPUBPreviewView(
                                     fileURL: document.fileURL,
+                                    initialSectionIndex: appModel.readingPosition(for: document),
                                     onSelectionChange: { selection in
                                         appModel.updateCurrentSelection(selection)
                                     },
@@ -91,6 +95,9 @@ struct DocumentPreviewPanel: View {
                                             currentPageIndex: currentSectionIndex,
                                             visiblePageIndexes: visibleSectionIndexes
                                         )
+                                    },
+                                    onSectionCountChange: { sectionCount in
+                                        appModel.updateTotalPages(sectionCount)
                                     }
                                 )
                             case .unknown:
@@ -109,8 +116,8 @@ struct DocumentPreviewPanel: View {
                         )
 
                         VStack(alignment: .leading, spacing: 12) {
-                            if let summary = appModel.autoSummary {
-                                PageSummaryCard(summary: summary, onDismiss: { appModel.autoSummary = nil })
+                            if let content = summaryCardContent {
+                                PageSummaryCard(content: content, onDismiss: { appModel.dismissAutoSummary() })
                                     .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
 
@@ -119,7 +126,7 @@ struct DocumentPreviewPanel: View {
                             }
                         }
                         .padding(20)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: appModel.autoSummary != nil)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: summaryCardContent != nil)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -165,20 +172,19 @@ struct DocumentPreviewPanel: View {
         }
         .padding(4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: appModel.selectedDocument?.id) {
-            guard let document = appModel.selectedDocument else { return }
-            switch document.kind {
-            case .pdf:
-                if let pdfDoc = PDFKit.PDFDocument(url: document.fileURL) {
-                    appModel.updateTotalPages(pdfDoc.pageCount)
-                }
-            case .epub:
-                if let book = try? LiveEPUBBookLoader().loadBook(from: document.fileURL) {
-                    appModel.updateTotalPages(book.sections.count)
-                }
-            case .unknown:
-                break
-            }
+    }
+
+    /// The page count now arrives from the preview views themselves, which already
+    /// open the document; loading it a second time here blocked the main thread.
+    private var summaryCardContent: PageSummaryCardContent? {
+        if let summary = appModel.autoSummary {
+            return .summary(summary)
         }
+
+        if let failure = appModel.autoSummaryError {
+            return .failure(failure)
+        }
+
+        return nil
     }
 }

@@ -8,6 +8,11 @@ struct ReaderWorkspaceView: View {
         VStack(spacing: 14) {
             ReaderToolbarView(appModel: appModel)
 
+            if let notice = appModel.sessionNotice {
+                SessionNoticeBanner(message: notice, onDismiss: appModel.dismissSessionNotice)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             HStack(alignment: .top, spacing: 14) {
                 if appModel.isLibraryVisible {
                     ReaderSidebarView(appModel: appModel)
@@ -50,9 +55,12 @@ struct ReaderWorkspaceView: View {
         }
         .animation(.spring(response: 0.28, dampingFraction: 0.92), value: appModel.isLibraryVisible)
         .animation(.spring(response: 0.28, dampingFraction: 0.92), value: appModel.isInspectorVisible)
+        .animation(.spring(response: 0.28, dampingFraction: 0.92), value: appModel.sessionNotice)
         .task {
+            await appModel.restoreReadingStateIfNeeded()
             await appModel.refreshProvidersIfNeeded()
             try? appModel.refreshSavedNotes()
+            await appModel.rebuildKnowledgeIndexIfNeeded()
         }
     }
 }

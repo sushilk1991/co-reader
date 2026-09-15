@@ -313,7 +313,7 @@ struct AppModelReaderStateTests {
     }
 
     @Test
-    func importingDocumentLoadsVisualsAndSelectsTheFirstOne() {
+    func importingDocumentLoadsVisualsAndSelectsTheFirstOne() async {
         let firstVisual = DocumentVisualAsset(
             id: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
             pageIndex: 2,
@@ -340,6 +340,7 @@ struct AppModelReaderStateTests {
         )
 
         appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        await waitUntil { !appModel.isExtractingVisuals }
 
         #expect(appModel.documentVisuals == [firstVisual, secondVisual])
         #expect(appModel.selectedVisual?.id == firstVisual.id)
@@ -369,6 +370,7 @@ struct AppModelReaderStateTests {
         ]
 
         appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        await waitUntil { !appModel.isExtractingVisuals }
         await appModel.runQuickAction(LearningAction.explainVisuals)
 
         #expect(appModel.chatTranscript.last?.content == "Diagram explained.")
@@ -399,6 +401,7 @@ struct AppModelReaderStateTests {
         ]
 
         appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        await waitUntil { !appModel.isExtractingVisuals }
         appModel.selectedVisual = nil
         appModel.updateReadingPosition(currentPageIndex: 10)
         await appModel.runQuickAction(LearningAction.explainVisuals)
@@ -431,6 +434,7 @@ struct AppModelReaderStateTests {
         ]
 
         appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        await waitUntil { !appModel.isExtractingVisuals }
         appModel.selectedVisual = nil
         await appModel.runQuickAction(LearningAction.explainVisuals)
 
@@ -440,7 +444,7 @@ struct AppModelReaderStateTests {
     }
 
     @Test
-    func exportSelectedVisualUsesVisualExporter() throws {
+    func exportSelectedVisualUsesVisualExporter() async throws {
         let exportedURL = URL(fileURLWithPath: "/tmp/exported-visual.png")
         let visual = DocumentVisualAsset(
             id: UUID(),
@@ -461,6 +465,7 @@ struct AppModelReaderStateTests {
         )
 
         appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        await waitUntil { !appModel.isExtractingVisuals }
         let exported = try appModel.exportSelectedVisual()
 
         #expect(exported == exportedURL)
@@ -468,7 +473,7 @@ struct AppModelReaderStateTests {
     }
 
     @Test
-    func exportSelectedVisualFallsBackToFirstVisualWhenSelectionIsMissing() throws {
+    func exportSelectedVisualFallsBackToFirstVisualWhenSelectionIsMissing() async throws {
         let exportedURL = URL(fileURLWithPath: "/tmp/exported-first-visual.png")
         let visual = DocumentVisualAsset(
             id: UUID(),
@@ -489,6 +494,7 @@ struct AppModelReaderStateTests {
         )
 
         appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Agent Mesh.pdf"))
+        await waitUntil { !appModel.isExtractingVisuals }
         appModel.selectedVisual = nil
         let exported = try appModel.exportSelectedVisual()
 
@@ -549,7 +555,8 @@ private struct StubDocumentAssistant: DocumentAssisting {
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int],
-        visualAsset: DocumentVisualAsset?
+        visualAsset: DocumentVisualAsset?,
+        onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void
     ) async throws -> String {
         result
     }
@@ -569,7 +576,11 @@ private struct StubVisualExtractor: DocumentVisualExtracting {
         self.renderedSnapshot = renderedSnapshot
     }
 
-    func extractVisuals(for document: ReaderDocument) throws -> [DocumentVisualAsset] {
+    func extractVisuals(
+        for document: ReaderDocument,
+        isCancelled: @escaping @Sendable () -> Bool,
+        onProgress: @escaping @Sendable (PageScanProgress) -> Void
+    ) throws -> [DocumentVisualAsset] {
         visuals
     }
 
@@ -631,7 +642,8 @@ private final class RecordingDocumentAssistant: @unchecked Sendable, DocumentAss
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int],
-        visualAsset: DocumentVisualAsset?
+        visualAsset: DocumentVisualAsset?,
+        onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void
     ) async throws -> String {
         lastVisual = visualAsset
         return result

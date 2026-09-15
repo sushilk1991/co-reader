@@ -7,6 +7,7 @@ protocol DocumentAssisting: Sendable {
         selection: DocumentSelection?,
         currentPageIndex: Int?,
         visiblePageIndexes: [Int],
-        visualAsset: DocumentVisualAsset?
+        visualAsset: DocumentVisualAsset?,
+        onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void
     ) async throws -> String
 }

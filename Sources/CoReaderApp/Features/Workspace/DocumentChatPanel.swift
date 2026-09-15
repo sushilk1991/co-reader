@@ -100,6 +100,26 @@ struct DocumentChatPanel: View {
                     .stroke(ReaderTheme.lineSoft, lineWidth: 1)
             )
 
+            if appModel.isAskingQuestion {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+
+                    Text(appModel.askProgress?.label ?? "Preparing the question…")
+                        .font(.caption)
+                        .foregroundStyle(ReaderTheme.smoke)
+
+                    Spacer()
+
+                    Button("Cancel", action: appModel.cancelQuestion)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(ReaderTheme.panelRaised.opacity(0.92), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+
             if let chatError = appModel.chatError {
                 Text(chatError)
                     .font(.caption)

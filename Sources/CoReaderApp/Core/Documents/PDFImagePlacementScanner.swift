@@ -3,6 +3,16 @@ import Foundation
 import PDFKit
 
 struct PDFImagePlacementScanner {
+    /// Real documents nest forms a handful of levels deep; anything beyond this is
+    /// either malformed or hostile, and each level costs native stack.
+    static let defaultMaxFormDepth = 12
+
+    private let maxFormDepth: Int
+
+    init(maxFormDepth: Int = PDFImagePlacementScanner.defaultMaxFormDepth) {
+        self.maxFormDepth = maxFormDepth
+    }
+
     func imagePlacements(for page: PDFPage) -> [CGRect] {
         guard let pageRef = page.pageRef else {
             return []
@@ -15,16 +25,49 @@ struct PDFImagePlacementScanner {
         scanPDFContentStream(
             contentStream,
             collector: collector,
-            currentTransform: .identity
+            currentTransform: .identity,
+            nesting: PDFFormNesting(limit: maxFormDepth)
         )
         return collector.deduplicatedPlacements()
+    }
+}
+
+/// Tracks how deep the scanner is inside Form XObjects and which forms are on the
+/// current path, so a form that draws itself (directly or via a cycle) is entered once.
+///
+/// ```
+///  page ──Do Fm1──▶ Fm1 (depth 1) ──Do Fm2──▶ Fm2 (depth 2) ──Do Fm1──▶ skipped: ancestor
+///                                              └──Do Fm3──▶ Fm3 (depth 3) … up to `limit`
+/// ```
+private struct PDFFormNesting {
+    let depth: Int
+    let ancestors: Set<CGPDFStreamRef>
+    let limit: Int
+
+    init(limit: Int) {
+        self.init(depth: 0, ancestors: [], limit: limit)
+    }
+
+    private init(depth: Int, ancestors: Set<CGPDFStreamRef>, limit: Int) {
+        self.depth = depth
+        self.ancestors = ancestors
+        self.limit = limit
+    }
+
+    func canEnter(form: CGPDFStreamRef) -> Bool {
+        depth < limit && !ancestors.contains(form)
+    }
+
+    func entering(form: CGPDFStreamRef) -> PDFFormNesting {
+        PDFFormNesting(depth: depth + 1, ancestors: ancestors.union([form]), limit: limit)
     }
 }
 
 private func scanPDFContentStream(
     _ contentStream: CGPDFContentStreamRef,
     collector: PDFImagePlacementCollector,
-    currentTransform: CGAffineTransform
+    currentTransform: CGAffineTransform,
+    nesting: PDFFormNesting
 ) {
     guard let operatorTable = CGPDFOperatorTableCreate() else {
         return
@@ -38,7 +81,8 @@ private func scanPDFContentStream(
 
     let state = PDFImagePlacementScanState(
         collector: collector,
-        currentTransform: currentTransform
+        currentTransform: currentTransform,
+        nesting: nesting
     )
     let info = Unmanaged.passUnretained(state).toOpaque()
     let scanner = CGPDFScannerCreate(contentStream, operatorTable, info)
@@ -128,6 +172,9 @@ private func drawObjectCallback(scanner: CGPDFScannerRef, info: UnsafeMutableRaw
             CGRect(x: 0, y: 0, width: 1, height: 1).applying(state.currentTransform)
         )
     case "Form":
+        guard state.nesting.canEnter(form: stream) else {
+            return
+        }
         var resources: CGPDFDictionaryRef?
         _ = CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources)
         guard let resources else {
@@ -143,7 +190,8 @@ private func drawObjectCallback(scanner: CGPDFScannerRef, info: UnsafeMutableRaw
         scanPDFContentStream(
             nestedContentStream,
             collector: state.collector,
-            currentTransform: state.currentTransform.concatenating(formMatrix(in: dictionary))
+            currentTransform: state.currentTransform.concatenating(formMatrix(in: dictionary)),
+            nesting: state.nesting.entering(form: stream)
         )
     default:
         return
@@ -188,12 +236,14 @@ private func formMatrix(in dictionary: CGPDFDictionaryRef) -> CGAffineTransform 
 
 private final class PDFImagePlacementScanState {
     let collector: PDFImagePlacementCollector
+    let nesting: PDFFormNesting
     var currentTransform: CGAffineTransform
     var graphicsStateStack: [CGAffineTransform] = []
 
-    init(collector: PDFImagePlacementCollector, currentTransform: CGAffineTransform) {
+    init(collector: PDFImagePlacementCollector, currentTransform: CGAffineTransform, nesting: PDFFormNesting) {
         self.collector = collector
         self.currentTransform = currentTransform
+        self.nesting = nesting
     }
 }
 

@@ -66,6 +66,37 @@ struct DocumentAssistantTests {
         #expect(await ollamaGenerator.callCount == 0)
     }
 
+    /// An embedding-only model that sorts ahead of a chat model must never be picked for
+    /// generation; that was the reported "talk to PDF does not work".
+    @Test
+    func answerSkipsEmbeddingOnlyOllamaModels() async throws {
+        let ollamaGenerator = StubOllamaGenerator(result: "Ollama answer")
+        let assistant = DocumentAssistant(
+            extractor: StubDocumentContextExtractor(
+                result: DocumentContext(title: "Distributed Systems", excerpt: "Consensus keeps replicas aligned.")
+            ),
+            ollamaGenerator: ollamaGenerator,
+            claudeGenerator: StubClaudeGenerator(result: "unused")
+        )
+
+        let answer = try await assistant.answer(
+            question: "Why does consensus matter?",
+            for: ReaderDocument(fileURL: URL(fileURLWithPath: "/tmp/Distributed Systems.pdf")),
+            providerStatuses: [
+                AIProviderStatus(
+                    kind: .ollama,
+                    isAvailable: true,
+                    detail: "ready",
+                    models: ["all-minilm:latest", "llama3.2", "nomic-embed-text:latest"]
+                )
+            ],
+            scope: .focus
+        )
+
+        #expect(answer == "Ollama answer")
+        #expect(await ollamaGenerator.lastModel == "llama3.2")
+    }
+
     @Test
     func answerPassesSelectionAndReadingPositionToExtractor() async throws {
         let extractor = RecordingDocumentContextExtractor(
@@ -232,7 +263,9 @@ private struct StubDocumentContextExtractor: DocumentContextExtracting {
         scope: DocumentQueryScope,
         selection: DocumentSelection?,
         currentPageIndex: Int?,
-        visiblePageIndexes: [Int]
+        visiblePageIndexes: [Int],
+        isCancelled: @escaping @Sendable () -> Bool,
+        onProgress: @escaping @Sendable (PageScanProgress) -> Void
     ) throws -> DocumentContext {
         result
     }
@@ -260,7 +293,9 @@ private final class RecordingDocumentContextExtractor: @unchecked Sendable, Docu
         scope: DocumentQueryScope,
         selection: DocumentSelection?,
         currentPageIndex: Int?,
-        visiblePageIndexes: [Int]
+        visiblePageIndexes: [Int],
+        isCancelled: @escaping @Sendable () -> Bool,
+        onProgress: @escaping @Sendable (PageScanProgress) -> Void
     ) throws -> DocumentContext {
         lastCall = Call(
             question: question,

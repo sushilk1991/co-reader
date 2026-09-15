@@ -13,7 +13,7 @@ struct ChatKnowledgeCapture: KnowledgeCapturing {
             id: UUID(),
             kind: .aiChat,
             title: "\(document.title) AI Chat",
-            sourceIdentifier: document.fileURL.lastPathComponent,
+            sourceIdentifier: document.noteSourceIdentifier,
             createdAt: Date(),
             bulletPoints: bullets,
             highlightExcerpt: question,
