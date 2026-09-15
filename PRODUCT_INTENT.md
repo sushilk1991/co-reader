@@ -73,7 +73,7 @@ listed after item 14 and are not scheduled here.
 
 1. `AppModel.startVisualExtraction` — selecting a PDF now runs `extractVisuals` through
    `BlockingWork.run` on a GCD thread, cancellable (Cancel button in the
-   Visuals panel, or switching documents), with "Scanning N of M pages"
+   Visuals panel, or switching documents), with "Scanning N of M pages for figures"
    progress in the panel while the user waits. What gets extracted is
    unchanged.
 2. `PDFImagePlacementScanner.defaultMaxFormDepth`, `PDFFormNesting` — Form XObject recursion is bounded
