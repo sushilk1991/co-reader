@@ -211,3 +211,99 @@ private actor LoginShellClaudeRunner: ShellCommandRunning {
         )
     }
 }
+
+/// The stubbed runner above models the shell; this suite runs the real `/bin/zsh -l`
+/// so the contract the locator relies on (dotfile output first, `command -v` last)
+/// is checked against zsh itself. `ZDOTDIR` points zsh at a throwaway `.zprofile`,
+/// so the test host's own dotfiles are never read. `ZDOTDIR` is process-wide, hence serialized.
+@Suite(.serialized)
+struct ClaudeCLILocatorLoginShellTests {
+    private static let dotfileBanner = "printed by .zprofile before any command"
+    private static let fakeVersion = "0.0.0-test"
+    private static let fakeAnswer = "answer from the located binary"
+    private static let generationArguments = "-p --output-format text --no-session-persistence"
+
+    /// One login shell locates the binary; `--version` and both generations then spawn it
+    /// directly, so the banner never reaches an answer and no per-generation probe runs.
+    @Test
+    func realLoginShellLocatesOnceAndKeepsBannerOutOfAnswers() async throws {
+        let sandbox = try TemporarySandbox()
+        defer { sandbox.cleanup() }
+        let fakeClaude = try installFakeClaude(in: sandbox.directory)
+        try installProfile(in: sandbox.directory, path: "\(fakeClaude.deletingLastPathComponent().path):$PATH")
+        setenv("ZDOTDIR", sandbox.directory.path, 1)
+        defer { unsetenv("ZDOTDIR") }
+
+        let runner = ProcessCommandRunner()
+        let locator = ClaudeCLILocator(commandRunner: runner, commonPaths: [])
+        let client = ClaudeCodeClient(locator: locator, commandRunner: runner)
+        let availability = try await ClaudeCLIProbe(locator: locator, commandRunner: runner).probe()
+        let firstAnswer = try await client.generate(prompt: "Explain page 1")
+        let secondAnswer = try await client.generate(prompt: "Explain page 2")
+
+        #expect(availability == .available(version: Self.fakeVersion))
+        #expect(firstAnswer == Self.fakeAnswer)
+        #expect(secondAnswer == Self.fakeAnswer)
+        #expect(!firstAnswer.contains(Self.dotfileBanner))
+        #expect(try await locator.executablePath() == fakeClaude.path)
+        #expect(try logLines(named: "login-shell.log", in: sandbox.directory) == ["sourced"])
+        #expect(try logLines(named: "claude-calls.log", in: sandbox.directory) == [
+            "--version", Self.generationArguments, Self.generationArguments
+        ])
+    }
+
+    /// With nothing named `claude` on the login shell's PATH, both callers report the
+    /// not-found reason instead of spawning anything.
+    @Test
+    func realLoginShellWithoutClaudeReportsNotFound() async throws {
+        let sandbox = try TemporarySandbox()
+        defer { sandbox.cleanup() }
+        try installProfile(in: sandbox.directory, path: sandbox.directory.path)
+        setenv("ZDOTDIR", sandbox.directory.path, 1)
+        defer { unsetenv("ZDOTDIR") }
+
+        let runner = ProcessCommandRunner()
+        let locator = ClaudeCLILocator(commandRunner: runner, commonPaths: [])
+        let availability = try await ClaudeCLIProbe(locator: locator, commandRunner: runner).probe()
+
+        #expect(availability == .unavailable(reason: "claude not found on PATH"))
+        do {
+            _ = try await ClaudeCodeClient(locator: locator, commandRunner: runner).generate(prompt: "hello")
+            Issue.record("Expected a missing CLI error.")
+        } catch {
+            #expect(error.localizedDescription == "claude not found on PATH")
+        }
+    }
+
+    /// A script standing in for `claude`: logs its argv, answers `--version`, otherwise echoes the fixed answer.
+    private func installFakeClaude(in directory: URL) throws -> URL {
+        let binDirectory = directory.appending(path: "bin", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: binDirectory, withIntermediateDirectories: true)
+        let script = binDirectory.appending(path: "claude")
+        let body = """
+        #!/bin/sh
+        printf '%s\\n' "$*" >> "\(directory.path)/claude-calls.log"
+        if [ "$1" = "--version" ]; then echo "\(Self.fakeVersion)"; exit 0; fi
+        cat > /dev/null
+        echo "\(Self.fakeAnswer)"
+        """
+        try body.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        return script
+    }
+
+    /// The login shell prints the banner first, logs that it ran, then sets PATH.
+    private func installProfile(in directory: URL, path: String) throws {
+        let profile = """
+        echo "\(Self.dotfileBanner)"
+        echo sourced >> "\(directory.path)/login-shell.log"
+        export PATH="\(path)"
+        """
+        try profile.write(to: directory.appending(path: ".zprofile"), atomically: true, encoding: .utf8)
+    }
+
+    private func logLines(named name: String, in directory: URL) throws -> [String] {
+        let contents = try String(contentsOf: directory.appending(path: name), encoding: .utf8)
+        return contents.split(whereSeparator: \.isNewline).map(String.init)
+    }
+}

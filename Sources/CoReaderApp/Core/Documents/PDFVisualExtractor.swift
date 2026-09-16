@@ -107,22 +107,23 @@ struct PDFVisualExtractor {
             rotate: 0,
             preserveAspectRatio: true
         )
-        let pageToImageTransform = drawingTransform.concatenating(
-            CGAffineTransform(
-                a: renderScale,
-                b: 0,
-                c: 0,
-                d: -renderScale,
-                tx: 0,
-                ty: CGFloat(pixelHeight)
-            )
+        // The bitmap context shares PDF user space's bottom-left origin, so drawing needs
+        // only the scale. `CGImage.cropping` counts rows from the top, so the crop
+        // transform adds the vertical flip on top of the drawing one.
+        //
+        //  page (pt, y up) --scale--> context (px, y up) --flip--> image rows (px, y down)
+        let pageToContextTransform = drawingTransform.concatenating(
+            CGAffineTransform(scaleX: renderScale, y: renderScale)
+        )
+        let pageToImageTransform = pageToContextTransform.concatenating(
+            CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: CGFloat(pixelHeight))
         )
 
         context.setFillColor(NSColor.white.cgColor)
         context.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
         context.interpolationQuality = .high
         context.saveGState()
-        context.concatenate(pageToImageTransform)
+        context.concatenate(pageToContextTransform)
         context.drawPDFPage(pageRef)
         context.restoreGState()
 
