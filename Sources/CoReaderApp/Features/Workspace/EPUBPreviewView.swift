@@ -131,10 +131,8 @@ struct EPUBPreviewView: View {
         let requestID = loadState.startLoading(fileURL: fileURL)
 
         do {
-            let loader = loader
-            let loadedBook = try await Task.detached(priority: .userInitiated) {
-                try loader.loadBook(from: fileURL)
-            }.value
+            // The loader owns blocking I/O and subprocess timeouts; cancellation follows this task.
+            let loadedBook = try await loader.loadBook(from: fileURL)
 
             guard loadState.accepts(requestID: requestID, fileURL: fileURL) else {
                 return

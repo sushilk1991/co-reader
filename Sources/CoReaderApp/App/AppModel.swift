@@ -21,6 +21,7 @@ final class AppModel {
     private var conceptsByPage: [String: [String]] = [:]
     private var summaryTask: Task<Void, Never>?
     private var lastAutoSummaryKey: String?
+    private var highlightLoadTask: Task<Void, Never>?
     private var visualExtractionTask: Task<Void, Never>?
     private var currentVisualExtractionID: UUID?
     private var askTask: Task<Void, Never>?
@@ -424,10 +425,13 @@ final class AppModel {
         openInspector(tab: .visuals)
     }
 
-    func capturePDFHighlights(_ drafts: [PDFDocumentHighlightDraft]) {
+    func capturePDFHighlights(_ drafts: [PDFDocumentHighlightDraft]) async {
         guard let document = selectedDocument else {
             return
         }
+
+        // A pending activation read must not replace the result of this edit.
+        highlightLoadTask?.cancel()
 
         do {
             for draft in drafts {
@@ -441,7 +445,7 @@ final class AppModel {
                     rects: draft.rects.map(PDFDocumentHighlight.HighlightRect.init(rect:))
                 )
 
-                try highlightStore.upsertHighlight(highlight, for: document)
+                try await highlightStore.upsertHighlight(highlight, for: document)
 
                 let note = KnowledgeNote(
                     id: draft.id,
@@ -450,7 +454,7 @@ final class AppModel {
                     sourceIdentifier: document.noteSourceIdentifier,
                     createdAt: highlight.createdAt,
                     bulletPoints: [
-                        "Saved from \(locationLabel(for: draft.pageIndex).lowercased()).",
+                        "Saved from page \(draft.pageIndex + 1).",
                         draft.quotedText
                     ],
                     highlightExcerpt: draft.quotedText,
@@ -460,25 +464,50 @@ final class AppModel {
                 try noteStore?.save(note: note)
             }
 
+            // Keep completion for an old document from changing the current reader.
+            guard selectedDocument?.id == document.id else {
+                return
+            }
+
             try refreshSavedNotesForSelectedDocument()
-            try refreshSavedHighlightsForSelectedDocument()
+            try await refreshDocumentHighlights()
+            guard selectedDocument?.id == document.id else {
+                return
+            }
+
             openInspector(tab: .highlights)
         } catch {
+            guard selectedDocument?.id == document.id else {
+                return
+            }
+
             chatError = error.localizedDescription
         }
     }
 
-    func deleteHighlight(_ highlightID: UUID) {
+    func deleteHighlight(_ highlightID: UUID) async {
         guard let document = selectedDocument else {
             return
         }
 
+        // A pending activation read must not replace the result of this edit.
+        highlightLoadTask?.cancel()
+
         do {
-            try highlightStore.removeHighlight(id: highlightID, for: document)
+            try await highlightStore.removeHighlight(id: highlightID, for: document)
             try noteStore?.delete(noteID: highlightID)
+            // Keep completion for an old document from changing the current reader.
+            guard selectedDocument?.id == document.id else {
+                return
+            }
+
             try refreshSavedNotesForSelectedDocument()
-            try refreshSavedHighlightsForSelectedDocument()
+            try await refreshDocumentHighlights()
         } catch {
+            guard selectedDocument?.id == document.id else {
+                return
+            }
+
             chatError = error.localizedDescription
         }
     }
@@ -745,6 +774,11 @@ final class AppModel {
         }
 
         if let cached = pageSummaries[key] {
+            // A dismissed card stays hidden until the reader returns from another page.
+            guard isNewPage else {
+                return
+            }
+
             autoSummary = cached
             autoConceptTags = conceptsByPage[key] ?? []
             return
@@ -860,7 +894,21 @@ final class AppModel {
         currentPageIndex = readingPositionsByDocument[positionKey(for: document)]
 
         try? refreshSavedNotesForSelectedDocument()
-        try? refreshSavedHighlightsForSelectedDocument()
+        // Loading can await iCloud; obsolete document loads must not publish into the new selection.
+        highlightLoadTask?.cancel()
+        highlightLoadTask = Task { [weak self] in
+            do {
+                try await self?.refreshDocumentHighlights()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self, self.selectedDocument?.id == document.id, !Task.isCancelled else {
+                    return
+                }
+
+                self.chatError = error.localizedDescription
+            }
+        }
         startVisualExtraction(for: document)
     }
 
@@ -931,14 +979,19 @@ final class AppModel {
         savedNotes = try noteStore.notes(forSource: selectedDocument.noteSourceIdentifier, limit: Self.savedNotesLimit)
     }
 
-    private func refreshSavedHighlightsForSelectedDocument() throws {
+    private func refreshDocumentHighlights() async throws {
         guard let selectedDocument else {
             savedHighlights = []
             pdfDocumentHighlights = []
             return
         }
 
-        let storedHighlights = try highlightStore.loadHighlights(for: selectedDocument)
+        let storedHighlights = try await highlightStore.loadHighlights(for: selectedDocument)
+        // A document switch or cancellation invalidates a load that finished later.
+        guard self.selectedDocument?.id == selectedDocument.id, !Task.isCancelled else {
+            return
+        }
+
         pdfDocumentHighlights = storedHighlights
 
         let notePreviewByID = Dictionary(uniqueKeysWithValues: savedNotes.map { ($0.id, $0.notePreview) })

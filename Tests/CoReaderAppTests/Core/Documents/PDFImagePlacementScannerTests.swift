@@ -5,6 +5,29 @@ import Testing
 @testable import CoReaderApp
 
 struct PDFImagePlacementScannerTests {
+    /// Each local matrix precedes its parent CTM; translations must not be scaled twice.
+    /// `image (20x10 at 1,2) -> translate (5,7) -> scale (2,3) -> translate (10,20)`.
+    @Test
+    func nestedTransformPlacement() throws {
+        let page = try makePage(
+            pageContent: "q 1 0 0 1 10 20 cm /Fm1 Do Q",
+            forms: [
+                PDFTestForm(
+                    name: "Fm1", matrix: "[2 0 0 3 0 0]",
+                    content: "q /Fm2 Do Q", references: ["Fm2"]
+                ),
+                PDFTestForm(
+                    name: "Fm2", matrix: "[1 0 0 1 5 7]",
+                    content: "q 20 0 0 10 1 2 cm /Im1 Do Q", references: ["Im1"]
+                )
+            ]
+        )
+
+        let placements = PDFImagePlacementScanner().imagePlacements(for: page)
+
+        #expect(placements == [CGRect(x: 22, y: 47, width: 40, height: 30)])
+    }
+
     /// A form that draws itself must not recurse until the stack overflows.
     @Test
     func selfReferencingFormIsScannedOnce() throws {

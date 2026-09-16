@@ -18,10 +18,17 @@ struct LiveDocumentContextExtractor: DocumentContextExtracting {
         visiblePageIndexes: [Int],
         isCancelled: @escaping @Sendable () -> Bool,
         onProgress: @escaping @Sendable (PageScanProgress) -> Void
-    ) throws -> DocumentContext {
+    ) async throws -> DocumentContext {
         switch document.kind {
         case .pdf:
-            let pageTexts = try extractPDFPageTexts(from: document.fileURL, isCancelled: isCancelled, onProgress: onProgress)
+            // PDFKit still runs on GCD while EPUB extraction can suspend on its bounded process.
+            let pageTexts = try await BlockingWork.run { taskIsCancelled in
+                try extractPDFPageTexts(
+                    from: document.fileURL,
+                    isCancelled: { taskIsCancelled() || isCancelled() },
+                    onProgress: onProgress
+                )
+            }
             return composer.compose(
                 title: document.title,
                 question: question,
@@ -32,7 +39,7 @@ struct LiveDocumentContextExtractor: DocumentContextExtracting {
                 pageTexts: pageTexts
             )
         case .epub:
-            let book = try epubLoader.loadBook(from: document.fileURL)
+            let book = try await epubLoader.loadBook(from: document.fileURL)
             return composer.compose(
                 title: book.title,
                 question: question,

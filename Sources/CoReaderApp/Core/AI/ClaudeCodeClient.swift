@@ -12,19 +12,10 @@ struct ClaudeCodeClient: ClaudeGenerating {
 
     func generate(prompt: String) async throws -> String {
         // The prompt travels over stdin: argv is size-limited and visible in `ps`.
-        let result = try await commandRunner.run(
-            ShellCommand(
-                executable: "/usr/bin/env",
-                arguments: [
-                    "claude",
-                    "-p",
-                    "--output-format",
-                    "text",
-                    "--no-session-persistence"
-                ],
-                standardInput: prompt,
-                timeout: Self.generationTimeout
-            )
+        let result = try await ClaudeCLIProbe(commandRunner: commandRunner).runResolved(
+            arguments: ["-p", "--output-format", "text", "--no-session-persistence"],
+            standardInput: prompt,
+            timeout: Self.generationTimeout
         )
 
         guard result.exitCode == 0 else {

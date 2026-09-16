@@ -91,6 +91,38 @@ struct AppModelReadingStateTests {
         #expect(appModel.sessionNotice?.contains("Could not restore") == true)
     }
 
+    /// Dismissal lasts for this page visit, even when scrolling changes the visible-page set.
+    @Test
+    func dismissedSummaryStaysHidden() async throws {
+        let summary = "A cached page summary."
+        let appModel = AppModel(
+            documentAssistant: FixedAnswerAssistant(result: "\(summary)\nTags: caching, reading"),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .claudeCLI, isAvailable: true, detail: "ready", models: [])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5])
+        await waitUntil { appModel.autoSummary != nil }
+        #expect(appModel.autoSummary == summary)
+
+        // Repeated position events must not restore the dismissed card.
+        appModel.dismissAutoSummary()
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5, 6])
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [4, 5])
+        #expect(appModel.autoSummary == nil)
+
+        // A real revisit restores the cached summary and tags.
+        appModel.updateReadingPosition(currentPageIndex: 6, visiblePageIndexes: [6])
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5])
+        #expect(appModel.autoSummary == summary)
+        #expect(appModel.autoConceptTags == ["caching", "reading"])
+    }
+
     /// A failed auto-summary must say why instead of leaving the card blank.
     @Test
     func autoSummaryFailureIsVisible() async throws {

@@ -138,7 +138,8 @@ private func concatenateMatrixCallback(scanner: CGPDFScannerRef, info: UnsafeMut
         tx: e,
         ty: f
     )
-    state.currentTransform = state.currentTransform.concatenating(transform)
+    // PDF composes local coordinates before the parent CTM: M x CTM.
+    state.currentTransform = transform.concatenating(state.currentTransform)
 }
 
 private func drawObjectCallback(scanner: CGPDFScannerRef, info: UnsafeMutableRawPointer?) {
@@ -190,7 +191,8 @@ private func drawObjectCallback(scanner: CGPDFScannerRef, info: UnsafeMutableRaw
         scanPDFContentStream(
             nestedContentStream,
             collector: state.collector,
-            currentTransform: state.currentTransform.concatenating(formMatrix(in: dictionary)),
+            // Form coordinates enter the parent space before the inherited page transform.
+            currentTransform: formMatrix(in: dictionary).concatenating(state.currentTransform),
             nesting: state.nesting.entering(form: stream)
         )
     default:

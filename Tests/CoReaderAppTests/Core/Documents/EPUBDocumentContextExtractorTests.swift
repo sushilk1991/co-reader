@@ -4,7 +4,7 @@ import Testing
 
 struct EPUBDocumentContextExtractorTests {
     @Test
-    func extractorUsesCurrentChapterTextForEPUBDocuments() throws {
+    func contextUsesCurrentChapter() async throws {
         let extractor = LiveDocumentContextExtractor(
             epubLoader: StubEPUBBookLoader(
                 book: EPUBBook(
@@ -28,7 +28,7 @@ struct EPUBDocumentContextExtractorTests {
             )
         )
 
-        let context = try extractor.extractContext(
+        let context = try await extractor.extractContext(
             for: ReaderDocument(fileURL: URL(fileURLWithPath: "/tmp/Distributed Reading.epub")),
             question: "How do quorum writes affect durability?",
             scope: .focus,

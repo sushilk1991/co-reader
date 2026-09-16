@@ -77,10 +77,16 @@ struct DocumentPreviewPanel: View {
                                         appModel.updateTotalPages(pageCount)
                                     },
                                     onHighlightCapture: { drafts in
-                                        appModel.capturePDFHighlights(drafts)
+                                        // Let the model await synced storage without blocking this callback.
+                                        Task {
+                                            await appModel.capturePDFHighlights(drafts)
+                                        }
                                     },
                                     onHighlightRemoval: { highlightID in
-                                        appModel.deleteHighlight(highlightID)
+                                        // Let the model await synced storage without blocking this callback.
+                                        Task {
+                                            await appModel.deleteHighlight(highlightID)
+                                        }
                                     }
                                 )
                             case .epub:

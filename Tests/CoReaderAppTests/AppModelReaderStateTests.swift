@@ -132,7 +132,7 @@ struct AppModelReaderStateTests {
     }
 
     @Test
-    func capturePDFHighlightsPersistsGeometryColorAndNoteMetadata() throws {
+    func capturePersistsPDFHighlights() async throws {
         let noteStore = StubNoteStore()
         let highlightStore = StubDocumentHighlightStore()
         let appModel = AppModel(
@@ -155,7 +155,7 @@ struct AppModelReaderStateTests {
             ]
         )
 
-        appModel.capturePDFHighlights([draft])
+        await appModel.capturePDFHighlights([draft])
 
         #expect(appModel.savedHighlights.count == 1)
         #expect(appModel.savedHighlights[0].color == .mint)
@@ -168,7 +168,7 @@ struct AppModelReaderStateTests {
     }
 
     @Test
-    func deleteHighlightRemovesStoredGeometryAndKnowledgeEntry() throws {
+    func deleteRemovesHighlight() async throws {
         let noteStore = StubNoteStore()
         let highlightStore = StubDocumentHighlightStore()
         let appModel = AppModel(
@@ -188,8 +188,8 @@ struct AppModelReaderStateTests {
             rects: [CGRect(x: 32, y: 412, width: 220, height: 18)]
         )
 
-        appModel.capturePDFHighlights([draft])
-        appModel.deleteHighlight(draft.id)
+        await appModel.capturePDFHighlights([draft])
+        await appModel.deleteHighlight(draft.id)
 
         #expect(appModel.savedHighlights.isEmpty)
         #expect(appModel.pdfDocumentHighlights.isEmpty)
@@ -198,7 +198,7 @@ struct AppModelReaderStateTests {
     }
 
     @Test
-    func selectingDifferentDocumentResetsReaderSessionAndScopesNotes() throws {
+    func selectionScopesReaderState() async throws {
         let noteStore = StubNoteStore()
         let appModel = AppModel(
             documentAssistant: StubDocumentAssistant(result: "Unused"),
@@ -269,9 +269,10 @@ struct AppModelReaderStateTests {
         #expect(appModel.noteDraft.isEmpty)
         #expect(appModel.savedNotes.count == 1)
         #expect(appModel.savedNotes[0].sourceIdentifier == "/tmp/Book Two.pdf")
+        await waitUntil { appModel.savedHighlights.count == 1 }
         #expect(appModel.savedHighlights.count == 1)
-        #expect(appModel.savedHighlights[0].pageIndex == 9)
-        #expect(appModel.savedHighlights[0].quotedText == "Fresh quote")
+        #expect(appModel.savedHighlights.first?.pageIndex == 9)
+        #expect(appModel.savedHighlights.first?.quotedText == "Fresh quote")
     }
 
     @Test

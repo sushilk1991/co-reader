@@ -44,7 +44,10 @@ struct ReaderHighlightsPanel: View {
                                     Spacer()
 
                                     Button {
-                                        appModel.deleteHighlight(highlight.id)
+                                        // Let the model await synced storage without blocking this callback.
+                                        Task {
+                                            await appModel.deleteHighlight(highlight.id)
+                                        }
                                     } label: {
                                         Image(systemName: "trash")
                                             .font(.caption)
