@@ -1,6 +1,7 @@
 # Product intent
 
-Last audited from source: 2026-09-15 (v0.2.1, marketing version in `project.yml`).
+Last audited from source: 2026-09-15 (v0.2.1, marketing version in `project.yml`),
+re-audited the same day after the fourteen defects below were fixed.
 
 CoReader is a local macOS reader for PDFs and EPUBs: highlight passages, take
 notes, and ask questions against the open document. Confirmed direction: a
@@ -53,7 +54,7 @@ Grounded in what is absent from the targets and in `6c3f0b6`:
   reports when a PDF has no extractable text)
 - In-book EPUB highlight rendering
 - Copying imports into an app-owned library (the library stores original URLs)
-- App Sandbox. If it is ever enabled, `ProviderStatusView.swift:12-21` must
+- App Sandbox. If it is ever enabled, `ProviderStatusView`'s `fileImporter` callback must
   call `startAccessingSecurityScopedResource()` on `fileImporter` URLs, or
   open/extract fails once the importer callback ends.
 
@@ -61,81 +62,123 @@ Grounded in what is absent from the targets and in `6c3f0b6`:
 
 ## Current state (not polished)
 
-Unit tests pass (`swift test`: 58 Swift Testing tests on 2026-09-15). That does
-not mean the GUI is stable. Findings below are from reading this tree and
-running those tests, not from a crash log. They are scheduled as later work;
-this document does not fix them.
+Unit tests pass (`swift test`, 2026-09-15). That does
+not mean the GUI is stable. The fourteen findings below came from reading this
+tree, not from a crash log. Each was fixed on 2026-09-15 with a failing test
+first where a unit test could express the rule; the entries now describe what
+the code does today and what is still open. Follow-ups found while fixing are
+listed after item 14 and are not scheduled here.
 
 ### Crashes and freezes
 
-1. `AppModel.swift:675` — selecting a PDF runs `extractVisuals` synchronously
-   on `@MainActor`. Trigger: import/select a PDF. Effect: UI freeze while every
-   page is scanned and rendered (up to 1600px); Force Quit looks like a crash.
-2. `PDFImagePlacementScanner.swift:130-147` — `Do` on a Form XObject recurses
-   into `scanPDFContentStream` with no depth cap or visited set. Trigger: a PDF
-   whose forms nest deeply or cycle. Effect: stack overflow abort.
-3. `ProcessCommandRunner.swift:14-15` — `waitUntilExit()` with no timeout. The
-   runner is a nonisolated `async` struct, so the call hops off the MainActor
-   and pins a cooperative-pool thread while `AppModel.refreshProviders` /
-   `ClaudeCodeClient` await a task that never completes. Trigger: launch
-   (Claude probe falls through to `/bin/zsh -l -c "claude --version"` at
-   `ClaudeCLIProbe.swift:35-38`) or Ask when Claude is the fallback. Effect: a
-   hanging login shell never returns; the status pill stays "Scanning AI", the
-   Ask never answers, and the pool thread is lost for the process lifetime.
-4. `HighlightingPDFView.swift:115-146` via `PDFPreviewView.swift:36` — every
-   SwiftUI `updateNSView` strips and re-adds all highlight annotations. Trigger:
-   scrolling (page-change mutates `AppModel`, so the representable updates).
-   Effect: PDFKit mutation during layout, flicker, hang.
-5. `EPUBPreviewView.swift:199-217` — `WKUserContentController.add` has no
-   matching `removeScriptMessageHandler` in `deinit`. The coordinator holds the
-   controller only weakly (`:185`), so there is no cycle and no dangling call.
-   Trigger: close or switch an EPUB. Effect: the handler registration outlives
-   the representable, so the coordinator and the `AppModel` closures it
-   captured stay alive until WebKit releases the web view.
-6. `LiveDocumentContextExtractor.swift:52-63` — Ask walks `page.string` for
-   every PDF page synchronously inside nonisolated `DocumentAssistant.answer`,
-   before the LLM `await`. That pins a cooperative-pool thread, not the main
-   thread. Trigger: question on a long PDF. Effect: the answer stalls for the
-   whole extraction with no progress or cancellation.
-7. `DocumentPreviewPanel.swift:175-177` — page-count load calls
-   `LiveEPUBBookLoader.loadBook` on `.task` (MainActor), and
-   `LiveEPUBBookLoader.swift:73-74` blocks on `ditto`. Trigger: open an EPUB.
-   Effect: freeze; duplicate work with `EPUBPreviewView`.
+1. `AppModel.startVisualExtraction` — selecting a PDF now runs `extractVisuals` through
+   `BlockingWork.run` on a GCD thread, cancellable (Cancel button in the
+   Visuals panel, or switching documents), with "Scanning N of M pages for figures"
+   progress in the panel while the user waits. What gets extracted is
+   unchanged.
+2. `PDFImagePlacementScanner.defaultMaxFormDepth`, `PDFFormNesting` — Form XObject recursion is bounded
+   by `defaultMaxFormDepth` (12) and an ancestor set, so a form that draws
+   itself or cycles is entered once per path. Deeper nesting is skipped, not
+   scanned.
+3. `ProcessCommandRunner` (`scheduleTimeout`, `expire`) — every `ShellCommand` carries a
+   `timeout`; on expiry the process is terminated and `ShellCommandError.timedOut`
+   is thrown. `ClaudeCLIProbe.probeTimeout` (15 s) turns that into
+   `.unavailable(reason:)`, and `ClaudeCodeClient.generationTimeout` (300 s) into a
+   generation failure. The reason reaches the status pill tooltip
+   (`ReaderToolbarView.swift`, `AppModel.providerReadinessDetail`), so
+   "Scanning AI" ends within the probe timeout.
+4. `HighlightingPDFView.syncManagedHighlights` diffs managed
+   annotations by highlight id and only adds, removes, or replaces the ones
+   that changed; `PDFPreviewView.swift` skips the call when the highlight list
+   is unchanged. Scrolling no longer mutates PDFKit annotations.
+5. `EPUBPreviewView.Coordinator` (`configure`, `detach`, `dismantleNSView`) — the web view registers the
+   coordinator directly as the script message handler, and `dismantleNSView`
+   calls `detach`, which removes the handler and user scripts, so the
+   coordinator and the `AppModel` closures it captured are released with the view.
+6. `DocumentAssistant.answer`, `LiveDocumentContextExtractor.extractPDFPageTexts` —
+   the PDF `page.string` walk runs through `BlockingWork.run`, checks
+   cancellation per page, and reports `PageScanProgress`; the chat panel shows
+   "N of M pages" with a Cancel button while an Ask is in flight.
+7. `DocumentPreviewPanel` (`onPageCountChange`, `onSectionCountChange`) — the EPUB page count now comes from
+   `EPUBPreviewView`'s own load via `onSectionCountChange`; the panel no
+   longer calls `LiveEPUBBookLoader.loadBook` on the MainActor.
 
 ### Features that do not actually work
 
-8. `AppModel.swift:671` restores a page index, but `PDFPreviewView.swift:88`
-   never `go(to:)` and `EPUBPreviewView.swift:137` resets to chapter 0.
-   `PDFPreviewView.swift:142-148` then publishes page 0 through
-   `updateReadingPosition`, which overwrites the saved position. Trigger:
-   quit mid-document, relaunch. Effect: always starts at the beginning.
-9. `DocumentLibrary.swift:6-15` stores the original URL only.
-   `AppModel.swift:532-534` skips missing paths with no message. Trigger:
-   move/delete the file, or relaunch. Effect: library silently shrinks.
-10. `OllamaClient.swift:41-43` sorts model names;
-    `DocumentAssistant.swift:87-88` uses `models[0]`. Trigger: Ask while
-    Ollama lists an embed model before a chat model. Effect: generation fails
-    or returns garbage (“talk to PDF does not work”).
-11. `ClaudeCodeClient.swift:11-20` puts the whole prompt on `claude -p` argv.
-    Trigger: a long excerpt. Effect: argument-list too long, or a truncated
-    question.
-12. `CoReaderPaths.swift:41-50` treats
-    `Library/Mobile Documents/com~apple~CloudDocs` as iCloud;
-    `ReadingStateStore.swift:17` reads with `Data(contentsOf:)` and no
-    `NSFileCoordinator`. Notes markdown is synced (`LiveKnowledgeRepository.swift:8`);
-    the SQLite index is local-only (`…:9-16`) with no rebuild-from-markdown.
-    Trigger: second Mac, or a dataless placeholder. Effect: hang on launch, or
-    notes that exist as files but do not search.
-13. `AppModel.swift:679-680` scopes notes by `lastPathComponent`, not full
-    path. Trigger: two files named the same. Effect: mixed notes.
-14. `AppModel.swift:615-617` swallows auto-summary errors. Trigger: no model
-    or a failed generate. Effect: the summary card never appears and does not
-    say why.
+8. Reading position is restored. `PDFPreviewView.beginRestore` and `applyRestoreStep` drive
+   `ReadingPositionRestoreState`: it calls `go(to:)`, re-applies when PDFKit
+   reports an interim page 0, suppresses position publishing until a layout
+   pass shows the target page, and gives up after four attempts or 1.5 s.
+   `EPUBPreviewView` opens at `initialSectionIndex`.
+   `AppModel.restoreReadingStateIfNeeded` loads state off the actor
+   at launch; saves are suppressed while restoring and flushed on
+   `willTerminate`.
+9. `AppModel.missingLibraryFiles` — restore collects `missingLibraryFiles` and shows a
+   dismissable banner naming each file that could not be found. The library
+   still stores original URLs (see Out of scope).
+10. `OllamaModelTag.supportsChat`, `OllamaModelCatalog.chatModelNames` — models are chosen from the tag
+    listing's `capabilities` array (`completion` means chat), with a
+    name/family heuristic for older servers that omit it. Embedding-only
+    models are skipped and counted in the provider detail.
+    `AIProviderStatus.preferredChatModel` picks the first chat
+    model deterministically; with none, Ask fails with
+    `DocumentAssistantError.noChatCapableOllamaModel` and the pill says only
+    embedding models are installed.
+11. `ClaudeCodeClient.generate` — the prompt goes on stdin; argv is
+    `claude -p --output-format text --no-session-persistence`. The
+    `AIProviderKind` surface is unchanged.
+12. `ReadingStateStore.load` and `save` (`coordinatedRead`, `coordinatedWrite`) — reads and writes go through
+    `NSFileCoordinator`; a dataless iCloud placeholder triggers
+    `startDownloadingUbiquitousItem` and returns `notYetDownloaded`, in which
+    case the app starts empty, says so in the banner, and does not overwrite
+    the synced file for that session. `KnowledgeRepository.rebuildIndexFromMarkdown`
+    rebuilds the local SQLite index from the synced markdown at launch
+    (`AppModel.rebuildKnowledgeIndexIfNeeded`), so notes written on
+    another Mac become searchable. The storage strategy (which files sync) is
+    unchanged and remains an open question.
+13. `ReaderDocument.noteSourceIdentifier`, used by `ChatKnowledgeCapture` —
+    notes are scoped by the full standardized path. Notes saved under the old
+    filename scope are not listed under a document but remain findable through
+    search.
+14. `AppModel.triggerAutoSummary` — two kinds of auto-summary failure. A failed
+    generation is a property of the page: it shows a dismissable
+    "Auto-summary failed: <reason>" card, is cached per page, attempted once,
+    shown again only when the reader returns to the page (including after
+    switching documents), and never retried. Having no provider that can
+    answer text — none available, or Ollama up with only embedding models —
+    is not a property of the page and is never cached: one rule,
+    `[AIProviderStatus].textAnswerBlocker`, decides it for the assistant, the
+    summary task, and the card (`autoSummaryUnavailableReason`), so the
+    notice clears the moment a chat-capable provider is detected and pages
+    read meanwhile are summarised on their next visit.
+    Only the failure card is dismissable: it reports an event. The
+    "Auto-Summary Unavailable" notice states current app state, has no
+    dismiss control, and stays exactly as long as it is true
+    (`PageSummaryCardContent`).
+
+Follow-ups noticed while fixing, not built:
+
+- `PDFImagePlacementScanner.concatenateMatrixCallback` concatenates `cm` and form matrices in
+  the wrong order (CTM × M instead of M × CTM), so nested transforms place
+  figure crops wrongly. Only matters once the crop coordinates matter.
+- `ClaudeCodeClient.generate` resolves `claude` via `/usr/bin/env`; a
+  GUI-launched app inherits a minimal PATH, so the generation path can fail
+  even when the probe (which falls back to a login shell) succeeds.
+- `LiveDocumentHighlightStore.loadHighlights` still reads highlight files with
+  `Data(contentsOf:)` on the MainActor, which is the same iCloud placeholder
+  hazard as item 12 for highlights.
+- `AppModel.triggerAutoSummary`'s cached-summary branch re-shows a dismissed summary card on every position
+  update for the same page, including scrolls that only change the visible
+  page set. The failure card is gated on a page change (item 14); the success
+  card keeps the older behaviour.
+- `LiveEPUBBookLoader.loadBook` still spawns `ditto` through `Process` with
+  `waitUntilExit()` and no timeout, outside `ShellCommand`. It runs off the
+  MainActor (item 7), so a hung `ditto` pins a pool thread rather than the UI.
 
 Polish that matches “unpolished”: window min size 1120×760
-(`CoReaderApp.swift:10`); inspector and library closed at launch; EPUB
-highlights are list rows only (`SelectionActionBar.swift:46-54`); highlight
-annotation colors are fixed calibrated RGB (`ReaderHighlightColor.swift:23-34`),
+(`CoReaderApp.body`); inspector and library closed at launch; EPUB
+highlights are list rows only (`SelectionActionBar`); highlight
+annotation colors are fixed calibrated RGB (`ReaderHighlightColor.annotationColor`),
 not appearance-adaptive.
 
 ## Open Questions For Sushil

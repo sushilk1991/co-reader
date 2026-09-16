@@ -6,7 +6,11 @@ import PDFKit
 struct PDFVisualExtractor {
     private let placementScanner = PDFImagePlacementScanner()
 
-    func extract(from url: URL) throws -> [DocumentVisualAsset] {
+    func extract(
+        from url: URL,
+        isCancelled: @escaping @Sendable () -> Bool = { false },
+        onProgress: @escaping @Sendable (PageScanProgress) -> Void = { _ in }
+    ) throws -> [DocumentVisualAsset] {
         guard let document = PDFDocument(url: url) else {
             throw PDFVisualExtractorError.unableToOpenDocument
         }
@@ -15,6 +19,13 @@ struct PDFVisualExtractor {
         let baseName = url.deletingPathExtension().lastPathComponent
 
         for pageIndex in 0 ..< document.pageCount {
+            // Every page is scanned and possibly rendered, so this is the natural
+            // place to stop early and to report how far the scan has come.
+            guard !isCancelled() else {
+                throw CancellationError()
+            }
+            defer { onProgress(PageScanProgress(completedPages: pageIndex + 1, totalPages: document.pageCount)) }
+
             guard let page = document.page(at: pageIndex) else {
                 continue
             }

@@ -1,0 +1,387 @@
+import Foundation
+import Testing
+@testable import CoReaderApp
+
+@MainActor
+struct AppModelReadingStateTests {
+    /// Saved page must come back after a relaunch: this was the "reading position
+    /// never restored" bug, where the view published page 0 over the saved value.
+    @Test
+    func readingPositionRoundTripsThroughTheStateFile() async throws {
+        let sandbox = try TemporarySandbox()
+        defer { sandbox.cleanup() }
+        let store = ReadingStateStore(fileURL: sandbox.directory.appending(path: "ReadingState.json"))
+        let bookURL = try sandbox.touch("Book.pdf")
+
+        let firstLaunch = makeAppModel(readingStateStore: store)
+        await firstLaunch.restoreReadingStateIfNeeded()
+        firstLaunch.importDocument(from: bookURL)
+        firstLaunch.updateReadingPosition(currentPageIndex: 7, visiblePageIndexes: [7, 8])
+        firstLaunch.saveReadingStateNow()
+
+        let secondLaunch = makeAppModel(readingStateStore: store)
+        #expect(secondLaunch.importedDocuments.isEmpty)
+
+        await secondLaunch.restoreReadingStateIfNeeded()
+
+        let restored = try #require(secondLaunch.selectedDocument)
+        #expect(restored.fileURL == bookURL.standardizedFileURL)
+        #expect(secondLaunch.currentPageIndex == 7)
+        #expect(secondLaunch.readingPosition(for: restored) == 7)
+    }
+
+    @Test
+    func restoreKeepsLibraryOrderAcrossLaunches() async throws {
+        let sandbox = try TemporarySandbox()
+        defer { sandbox.cleanup() }
+        let store = ReadingStateStore(fileURL: sandbox.directory.appending(path: "ReadingState.json"))
+        let older = try sandbox.touch("Older.pdf")
+        let newer = try sandbox.touch("Newer.pdf")
+
+        let firstLaunch = makeAppModel(readingStateStore: store)
+        await firstLaunch.restoreReadingStateIfNeeded()
+        firstLaunch.importDocument(from: older)
+        firstLaunch.importDocument(from: newer)
+        firstLaunch.saveReadingStateNow()
+
+        let secondLaunch = makeAppModel(readingStateStore: store)
+        await secondLaunch.restoreReadingStateIfNeeded()
+
+        #expect(secondLaunch.importedDocuments.map(\.fileURL) == [newer, older].map(\.standardizedFileURL))
+    }
+
+    /// A file that has moved must be reported, not silently dropped.
+    @Test
+    func restoreReportsMissingFilesInsteadOfDroppingThemSilently() async throws {
+        let sandbox = try TemporarySandbox()
+        defer { sandbox.cleanup() }
+        let store = ReadingStateStore(fileURL: sandbox.directory.appending(path: "ReadingState.json"))
+        let present = try sandbox.touch("Present.pdf")
+        let missing = sandbox.directory.appending(path: "Moved Away.pdf")
+        try store.save(
+            ReadingState(
+                documentURLs: [present, missing],
+                activeDocumentURL: missing,
+                positions: [missing.path: 3]
+            )
+        )
+
+        let appModel = makeAppModel(readingStateStore: store)
+        await appModel.restoreReadingStateIfNeeded()
+
+        #expect(appModel.importedDocuments.map(\.fileURL) == [present.standardizedFileURL])
+        #expect(appModel.missingLibraryFiles == [missing])
+        #expect(appModel.sessionNotice?.contains("Moved Away.pdf") == true)
+
+        appModel.dismissSessionNotice()
+
+        #expect(appModel.sessionNotice == nil)
+    }
+
+    @Test
+    func restoreReportsUnreadableStateFile() async throws {
+        let sandbox = try TemporarySandbox()
+        defer { sandbox.cleanup() }
+        let stateURL = sandbox.directory.appending(path: "ReadingState.json")
+        try Data("not json".utf8).write(to: stateURL)
+
+        let appModel = makeAppModel(readingStateStore: ReadingStateStore(fileURL: stateURL))
+        await appModel.restoreReadingStateIfNeeded()
+
+        #expect(appModel.sessionNotice?.contains("Could not restore") == true)
+    }
+
+    /// A failed auto-summary must say why instead of leaving the card blank.
+    @Test
+    func autoSummaryFailureIsVisible() async throws {
+        let appModel = AppModel(
+            documentAssistant: ThrowingAssistant(message: "Ollama generation failed."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+
+        appModel.updateReadingPosition(currentPageIndex: 2, visiblePageIndexes: [2])
+        await waitUntil { appModel.autoSummaryError != nil }
+
+        #expect(appModel.autoSummaryError == "Auto-summary failed: Ollama generation failed.")
+        #expect(appModel.autoSummary == nil)
+
+        appModel.dismissAutoSummary()
+
+        #expect(appModel.autoSummaryError == nil)
+    }
+
+    /// One attempt per page: leaving and coming back shows the stored reason again
+    /// instead of going silent or hitting the provider a second time.
+    @Test
+    func autoSummaryFailureIsShownAgainOnRevisit() async throws {
+        let assistant = CountingThrowingAssistant(message: "Ollama generation failed.")
+        let appModel = AppModel(
+            documentAssistant: assistant,
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5])
+        await waitUntil { appModel.autoSummaryError != nil }
+
+        appModel.updateReadingPosition(currentPageIndex: 6, visiblePageIndexes: [6])
+        await waitUntil { assistant.callCount == 2 }
+        #expect(appModel.autoSummaryError == "Auto-summary failed: Ollama generation failed.")
+
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5])
+
+        #expect(appModel.autoSummaryError == "Auto-summary failed: Ollama generation failed.")
+        #expect(assistant.callCount == 2)
+    }
+
+    /// Scrolling within the same page republishes the position; a dismissed
+    /// failure card must stay dismissed until the reader changes page.
+    @Test
+    func dismissedAutoSummaryFailureStaysDismissedOnSamePage() async throws {
+        let appModel = AppModel(
+            documentAssistant: ThrowingAssistant(message: "Ollama generation failed."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5])
+        await waitUntil { appModel.autoSummaryError != nil }
+        appModel.dismissAutoSummary()
+
+        appModel.updateReadingPosition(currentPageIndex: 5, visiblePageIndexes: [5, 6])
+
+        #expect(appModel.autoSummaryError == nil)
+    }
+
+    /// Provider availability is not a property of the page, so it is never cached
+    /// with the page: once a provider appears, the notice clears and the page is
+    /// summarised on its next visit.
+    @Test
+    func providerNoticeClearsWhenAProviderAppears() async throws {
+        let ollama = ScriptedOllamaProbe(result: .unavailable(reason: "Ollama server did not respond"))
+        let appModel = AppModel(
+            providerDiscovery: AIProviderDiscovery(ollamaProbe: ollama, claudeProbe: OfflineClaudeCLIProbe()),
+            documentAssistant: FixedAnswerAssistant(result: "Page one says hello."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+        await appModel.refreshProviders()
+
+        appModel.updateReadingPosition(currentPageIndex: 1, visiblePageIndexes: [1])
+
+        #expect(appModel.autoSummaryUnavailableReason == DocumentAssistantError.noAvailableProvider.localizedDescription)
+        #expect(appModel.autoSummaryError == nil)
+
+        ollama.result = .available(models: ["llama3.2"])
+        await appModel.refreshProviders()
+
+        #expect(appModel.autoSummaryUnavailableReason == nil)
+
+        appModel.updateReadingPosition(currentPageIndex: 2, visiblePageIndexes: [2])
+        appModel.updateReadingPosition(currentPageIndex: 1, visiblePageIndexes: [1])
+        await waitUntil { appModel.autoSummary != nil }
+
+        #expect(appModel.autoSummary != nil)
+        #expect(appModel.autoSummaryError == nil)
+    }
+
+    /// Ollama up with only embedding models is "no model" for item 14: the notice
+    /// is derived, nothing is cached against the page, and pulling a chat model
+    /// then refreshing lets the page be summarised.
+    @Test
+    func noChatModelNoticeClearsWhenAChatModelAppears() async throws {
+        let ollama = ScriptedOllamaProbe(result: .available(models: [], skippedEmbeddingModels: ["nomic-embed-text"]))
+        let appModel = AppModel(
+            providerDiscovery: AIProviderDiscovery(ollamaProbe: ollama, claudeProbe: OfflineClaudeCLIProbe()),
+            documentAssistant: FixedAnswerAssistant(result: "Page three says hello."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+        await appModel.refreshProviders()
+
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+
+        #expect(appModel.autoSummaryUnavailableReason == DocumentAssistantError.noChatCapableOllamaModel.localizedDescription)
+        #expect(appModel.autoSummaryError == nil)
+
+        ollama.result = .available(models: ["llama3.2"])
+        await appModel.refreshProviders()
+
+        #expect(appModel.autoSummaryUnavailableReason == nil)
+
+        appModel.updateReadingPosition(currentPageIndex: 4, visiblePageIndexes: [4])
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+        await waitUntil { appModel.autoSummary != nil }
+
+        #expect(appModel.autoSummary != nil)
+        #expect(appModel.autoSummaryError == nil)
+    }
+
+    /// Switching documents and coming back counts as returning to the page, so a
+    /// recorded failure on that page is shown again.
+    @Test
+    func recordedFailureReappearsAfterSwitchingDocuments() async throws {
+        let appModel = AppModel(
+            documentAssistant: ThrowingAssistant(message: "Ollama generation failed."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/First.pdf"))
+        let first = try #require(appModel.selectedDocument)
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+        await waitUntil { appModel.autoSummaryError != nil }
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Second.pdf"))
+        #expect(appModel.autoSummaryError == nil)
+
+        appModel.selectDocument(first)
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+
+        #expect(appModel.autoSummaryError == "Auto-summary failed: Ollama generation failed.")
+    }
+
+    /// Scrolling past a page while Ollama is mid-generation cancels the request as
+    /// `URLError(.cancelled)`; that is not a failure of the page and must not be cached.
+    @Test
+    func scrollingAwayMidSummaryRecordsNoPageFailure() async throws {
+        let assistant = GatedAssistant(result: "Page says hello.", cancellation: .throwsURLCancelled)
+        let appModel = AppModel(
+            documentAssistant: assistant,
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+        await waitUntil { assistant.callCount == 1 }
+        appModel.updateReadingPosition(currentPageIndex: 4, visiblePageIndexes: [4])
+        await waitUntil { assistant.callCount == 2 }
+        assistant.release()
+        await waitUntil { appModel.autoSummary != nil }
+
+        appModel.updateReadingPosition(currentPageIndex: 3, visiblePageIndexes: [3])
+        await waitUntil { assistant.callCount == 3 }
+
+        #expect(appModel.autoSummaryError == nil)
+        #expect(assistant.callCount == 3)
+    }
+
+    /// The two cards differ in kind: a generation failure is an event on one page
+    /// and can be dismissed; provider unavailability is app state and cannot.
+    @Test
+    func summaryCardSeparatesFailureFromUnavailable() async throws {
+        let appModel = AppModel(
+            providerDiscovery: AIProviderDiscovery(
+                ollamaProbe: ScriptedOllamaProbe(result: .unavailable(reason: "Ollama server did not respond")),
+                claudeProbe: OfflineClaudeCLIProbe()
+            ),
+            documentAssistant: ThrowingAssistant(message: "Ollama generation failed."),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            autoSummaryDelay: .zero
+        )
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Summaries.pdf"))
+        await appModel.refreshProviders()
+
+        let unavailable = try #require(appModel.summaryCardContent)
+        #expect(unavailable == .unavailable(DocumentAssistantError.noAvailableProvider.localizedDescription))
+        #expect(unavailable.title == "Auto-Summary Unavailable")
+        #expect(unavailable.isDismissable == false)
+
+        appModel.providerStatuses = [
+            AIProviderStatus(kind: .ollama, isAvailable: true, detail: "ready", models: ["llama3.2"])
+        ]
+        appModel.updateReadingPosition(currentPageIndex: 2, visiblePageIndexes: [2])
+        await waitUntil { appModel.autoSummaryError != nil }
+
+        let failure = try #require(appModel.summaryCardContent)
+        #expect(failure == .failure("Auto-summary failed: Ollama generation failed."))
+        #expect(failure.title == "Auto-Summary Failed")
+        #expect(failure.isDismissable)
+    }
+
+    private func makeAppModel(readingStateStore: ReadingStateStore) -> AppModel {
+        AppModel(
+            documentAssistant: FixedAnswerAssistant(result: "Unused"),
+            knowledgeCapture: NoOpKnowledgeCaptureDouble(),
+            noteStore: InMemoryNoteStore(),
+            visualExtractor: EmptyVisualExtractor(),
+            readingStateStore: readingStateStore
+        )
+    }
+}
+
+struct TemporarySandbox {
+    let directory: URL
+
+    init() throws {
+        directory = FileManager.default.temporaryDirectory
+            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    func touch(_ name: String) throws -> URL {
+        let url = directory.appending(path: name)
+        try Data().write(to: url)
+        return url
+    }
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+@MainActor
+private final class ScriptedOllamaProbe: OllamaProbing {
+    var result: AIProviderProbeResult
+
+    init(result: AIProviderProbeResult) {
+        self.result = result
+    }
+
+    func probe() async throws -> AIProviderProbeResult {
+        result
+    }
+}
+
+private struct OfflineClaudeCLIProbe: ClaudeCLIProbing {
+    func probe() async throws -> AIProviderProbeResult {
+        .unavailable(reason: "claude not found on PATH")
+    }
+}

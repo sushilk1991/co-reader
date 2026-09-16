@@ -132,6 +132,7 @@ struct ReaderToolbarView: View {
                     Capsule()
                         .stroke(ReaderTheme.lineSoft, lineWidth: 1)
                 )
+                .help(appModel.providerReadinessDetail)
 
             Button {
                 appModel.toggleInspector(preferredTab: appModel.selectedInspectorTab)

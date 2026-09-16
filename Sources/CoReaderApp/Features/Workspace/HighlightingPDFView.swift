@@ -6,6 +6,13 @@ final class HighlightingPDFView: PDFView {
     var selectedHighlightColor: ReaderHighlightColor = .yellow
     var onHighlightCapture: (([PDFDocumentHighlightDraft]) -> Void)?
     var onHighlightRemoval: ((UUID) -> Void)?
+    /// Fires after each layout pass; the coordinator uses it to re-apply a restored page.
+    var onLayout: (() -> Void)?
+
+    override func layout() {
+        super.layout()
+        onLayout?()
+    }
 
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
@@ -92,13 +99,11 @@ final class HighlightingPDFView: PDFView {
         }
 
         let pagePoint = convert(localPoint, to: page)
-        guard let annotation = page.annotation(at: pagePoint),
-              let userName = annotation.userName,
-              userName.hasPrefix(Self.highlightUserNamePrefix) else {
+        guard let annotation = page.annotation(at: pagePoint) else {
             return nil
         }
 
-        return UUID(uuidString: String(userName.dropFirst(Self.highlightUserNamePrefix.count)))
+        return managedHighlightID(of: annotation)
     }
 
     private func normalizedText(from value: String?) -> String? {
@@ -112,38 +117,102 @@ final class HighlightingPDFView: PDFView {
         return text
     }
 
+    /// Brings the page annotations in line with `highlights` by diffing, so an
+    /// unchanged highlight keeps its `PDFAnnotation` instance. Removing and
+    /// re-adding every annotation on each SwiftUI update made PDFKit re-layout and
+    /// flicker while scrolling.
+    ///
+    /// ```
+    ///  installed (by id) ─┬─ id not desired, or rects/colour differ ──▶ remove
+    ///                     └─ matches desired ───────────────────────▶ keep
+    ///  desired (by id) ───── not installed after the pass ──────────▶ add
+    /// ```
     func syncManagedHighlights(_ highlights: [PDFDocumentHighlight]) {
         guard let document else {
             return
         }
+
+        let desired = Dictionary(highlights.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        var installedIDs: Set<UUID> = []
+
+        for (id, annotations) in managedAnnotationsByID(in: document) {
+            guard let highlight = desired[id], annotationsMatch(annotations, highlight: highlight) else {
+                for (page, annotation) in annotations {
+                    page.removeAnnotation(annotation)
+                }
+                continue
+            }
+
+            installedIDs.insert(id)
+        }
+
+        for highlight in highlights where !installedIDs.contains(highlight.id) {
+            guard let page = document.page(at: highlight.pageIndex) else {
+                continue
+            }
+
+            for rect in highlight.rects {
+                page.addAnnotation(makeAnnotation(for: highlight, rect: rect))
+            }
+            installedIDs.insert(highlight.id)
+        }
+    }
+
+    private func managedAnnotationsByID(in document: PDFDocument) -> [UUID: [(page: PDFPage, annotation: PDFAnnotation)]] {
+        var byID: [UUID: [(page: PDFPage, annotation: PDFAnnotation)]] = [:]
 
         for pageIndex in 0 ..< document.pageCount {
             guard let page = document.page(at: pageIndex) else {
                 continue
             }
 
-            let managedAnnotations = page.annotations.filter {
-                ($0.userName ?? "").hasPrefix(Self.highlightUserNamePrefix)
+            for annotation in page.annotations {
+                guard let id = managedHighlightID(of: annotation) else {
+                    continue
+                }
+
+                byID[id, default: []].append((page, annotation))
             }
-            managedAnnotations.forEach(page.removeAnnotation)
         }
 
-        for highlight in highlights {
-            guard let page = document.page(at: highlight.pageIndex) else {
-                continue
-            }
+        return byID
+    }
 
-            for rect in highlight.rects {
-                let annotation = PDFAnnotation(bounds: rect.cgRect, forType: .highlight, withProperties: nil)
-                annotation.color = highlight.color.annotationColor
-                annotation.userName = Self.highlightUserNamePrefix + highlight.id.uuidString
-                annotation.contents = highlight.quotedText
-                annotation.shouldDisplay = true
-                annotation.shouldPrint = false
-                annotation.quadrilateralPoints = rect.quadrilateralPoints.map(NSValue.init(point:))
-                page.addAnnotation(annotation)
-            }
+    private func annotationsMatch(_ annotations: [(page: PDFPage, annotation: PDFAnnotation)], highlight: PDFDocumentHighlight) -> Bool {
+        guard let document, annotations.count == highlight.rects.count else {
+            return false
         }
+
+        let expectedColor = highlight.color.annotationColor
+        let installedBounds = annotations.map(\.annotation.bounds)
+
+        return annotations.allSatisfy { entry in
+            document.index(for: entry.page) == highlight.pageIndex &&
+                entry.annotation.color == expectedColor &&
+                entry.annotation.contents == highlight.quotedText
+        } && highlight.rects.allSatisfy { rect in
+            installedBounds.contains { $0.equalTo(rect.cgRect) }
+        }
+    }
+
+    private func makeAnnotation(for highlight: PDFDocumentHighlight, rect: PDFDocumentHighlight.HighlightRect) -> PDFAnnotation {
+        let annotation = PDFAnnotation(bounds: rect.cgRect, forType: .highlight, withProperties: nil)
+        annotation.color = highlight.color.annotationColor
+        annotation.userName = Self.highlightUserNamePrefix + highlight.id.uuidString
+        annotation.contents = highlight.quotedText
+        annotation.shouldDisplay = true
+        annotation.shouldPrint = false
+        annotation.quadrilateralPoints = rect.quadrilateralPoints.map(NSValue.init(point:))
+        return annotation
+    }
+
+    private func managedHighlightID(of annotation: PDFAnnotation) -> UUID? {
+        guard let userName = annotation.userName,
+              userName.hasPrefix(Self.highlightUserNamePrefix) else {
+            return nil
+        }
+
+        return UUID(uuidString: String(userName.dropFirst(Self.highlightUserNamePrefix.count)))
     }
 
     private static let highlightUserNamePrefix = "coreader-highlight:"

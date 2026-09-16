@@ -16,10 +16,18 @@ final class AppModel {
     private var documentLibrary = DocumentLibrary()
     private var readingPositionsByDocument: [String: Int] = [:]
     private var readingStateSaveTask: Task<Void, Never>?
-    private var summarizedPageKeys: Set<String> = []
     private var pageSummaries: [String: String] = [:]
+    private var pageSummaryFailures: [String: String] = [:]
     private var conceptsByPage: [String: [String]] = [:]
     private var summaryTask: Task<Void, Never>?
+    private var lastAutoSummaryKey: String?
+    private var visualExtractionTask: Task<Void, Never>?
+    private var currentVisualExtractionID: UUID?
+    private var askTask: Task<Void, Never>?
+    private var currentAskID: UUID?
+    private var hasRestoredReadingState = false
+    private var canPersistReadingState = true
+    private let autoSummaryDelay: Duration
     private(set) var hasLoadedProviders = false
     var isDiscoveringProviders = false
     var isImportingDocument = false
@@ -49,6 +57,19 @@ final class AppModel {
     var chatInput = ""
     var chatError: String?
     var chatTranscript: [ChatMessage] = []
+    var askProgress: DocumentAssistantProgress?
+    var isExtractingVisuals = false
+    var visualExtractionProgress: PageScanProgress?
+    var visualExtractionError: String?
+    var autoSummaryError: String?
+    var isRestoringReadingState = false
+    var readingStateRestoreError: String?
+    var missingLibraryFiles: [URL] = []
+
+    /// Auto-summaries wait for the reader to settle on a page before spending a
+    /// model call on it.
+    static let defaultAutoSummaryDelay: Duration = .seconds(4)
+    private static let savedNotesLimit = 20
 
     init(
         providerDiscovery: AIProviderDiscovery = .live(),
@@ -58,21 +79,19 @@ final class AppModel {
         highlightStore: DocumentHighlightStoring? = nil,
         visualExtractor: DocumentVisualExtracting = LiveDocumentVisualExtractor(),
         visualExporter: DocumentVisualExporting = LiveDocumentVisualExporter(),
-        readingStateStore: ReadingStateStore? = nil
+        readingStateStore: ReadingStateStore? = nil,
+        autoSummaryDelay: Duration = AppModel.defaultAutoSummaryDelay
     ) {
         self.providerDiscovery = providerDiscovery
         self.documentAssistant = documentAssistant
         self.visualExtractor = visualExtractor
         self.visualExporter = visualExporter
+        self.autoSummaryDelay = autoSummaryDelay
         let systems = AppModel.defaultKnowledgeSystems()
         self.knowledgeCapture = knowledgeCapture ?? systems.capture
         self.noteStore = noteStore ?? systems.noteStore
         self.highlightStore = highlightStore ?? AppModel.defaultHighlightStore()
         self.readingStateStore = readingStateStore ?? AppModel.defaultReadingStateStore()
-
-        if let state = try? self.readingStateStore?.load() {
-            restoreFromReadingState(state)
-        }
     }
 
     var importedDocuments: [ReaderDocument] {
@@ -121,6 +140,66 @@ final class AppModel {
         }
 
         return "AI Offline"
+    }
+
+    /// Why no page can be summarised right now. Read from provider state whenever
+    /// the card is built, never stored, so it clears as soon as a provider appears.
+    var autoSummaryUnavailableReason: String? {
+        guard hasLoadedProviders, !isDiscoveringProviders,
+              let blocker = providerStatuses.textAnswerBlocker else {
+            return nil
+        }
+
+        return blocker.localizedDescription
+    }
+
+    /// The card over the current page: a summary, one page's recorded failure, or
+    /// the live no-provider notice, in that order.
+    var summaryCardContent: PageSummaryCardContent? {
+        if let autoSummary {
+            return .summary(autoSummary)
+        }
+
+        if let autoSummaryError {
+            return .failure(autoSummaryError)
+        }
+
+        if let autoSummaryUnavailableReason {
+            return .unavailable(autoSummaryUnavailableReason)
+        }
+
+        return nil
+    }
+
+    /// Why the readiness pill says what it says: one line per offline provider.
+    var providerReadinessDetail: String {
+        if isDiscoveringProviders {
+            return "Checking Ollama and the Claude CLI."
+        }
+
+        let offline = providerStatuses.filter { !$0.isAvailable }
+        guard !offline.isEmpty else {
+            return statusDetail
+        }
+
+        return offline
+            .map { "\($0.kind.displayName): \($0.detail)" }
+            .joined(separator: "\n")
+    }
+
+    /// Something about the last session that the user needs to know: files that
+    /// could not be found, or a state file that could not be read.
+    var sessionNotice: String? {
+        if let readingStateRestoreError {
+            return readingStateRestoreError
+        }
+
+        guard !missingLibraryFiles.isEmpty else {
+            return nil
+        }
+
+        let names = missingLibraryFiles.map(\.lastPathComponent).joined(separator: ", ")
+        return "\(missingLibraryFiles.count) file(s) from your last session could not be found and were removed from the library: \(names)"
     }
 
     var currentPageLabel: String? {
@@ -193,6 +272,79 @@ final class AppModel {
         }
 
         await refreshProviders()
+    }
+
+    /// Loads the last session off the main actor (the file may live in iCloud and
+    /// be a not-yet-downloaded placeholder), then merges it with whatever the user
+    /// has already opened this launch.
+    func restoreReadingStateIfNeeded() async {
+        guard !hasRestoredReadingState, let readingStateStore else {
+            return
+        }
+
+        hasRestoredReadingState = true
+        isRestoringReadingState = true
+        defer { isRestoringReadingState = false }
+
+        do {
+            let state = try await BlockingWork.run { _ in try readingStateStore.load() }
+            restoreFromReadingState(state)
+        } catch ReadingStateStoreError.notYetDownloaded {
+            // Writing now would replace the newer state iCloud is still fetching.
+            canPersistReadingState = false
+            readingStateRestoreError = ReadingStateStoreError.notYetDownloaded.localizedDescription
+        } catch {
+            readingStateRestoreError = "Could not restore your last session: \(error.localizedDescription)"
+        }
+    }
+
+    /// Skips the save debounce; used when the app is about to quit.
+    func saveReadingStateNow() {
+        readingStateSaveTask?.cancel()
+        persistReadingState()
+    }
+
+    func dismissSessionNotice() {
+        readingStateRestoreError = nil
+        missingLibraryFiles = []
+    }
+
+    /// The page to reopen a document on, if one was recorded.
+    func readingPosition(for document: ReaderDocument) -> Int? {
+        readingPositionsByDocument[positionKey(for: document)]
+    }
+
+    /// Makes notes synced from another Mac searchable; the SQLite index is local-only.
+    func rebuildKnowledgeIndexIfNeeded() async {
+        guard let noteStore else {
+            return
+        }
+
+        do {
+            let changes = try await noteStore.rebuildIndexFromMarkdown()
+            guard changes > 0 else {
+                return
+            }
+
+            try refreshSavedNotesForSelectedDocument()
+        } catch {
+            chatError = "Note index rebuild failed: \(error.localizedDescription)"
+        }
+    }
+
+    func cancelVisualExtraction() {
+        visualExtractionTask?.cancel()
+        isExtractingVisuals = false
+        visualExtractionProgress = nil
+    }
+
+    func cancelQuestion() {
+        askTask?.cancel()
+    }
+
+    func dismissAutoSummary() {
+        autoSummary = nil
+        autoSummaryError = nil
     }
 
     func beginDocumentImport() {
@@ -295,7 +447,7 @@ final class AppModel {
                     id: draft.id,
                     kind: .highlight,
                     title: "\(document.title) Highlight",
-                    sourceIdentifier: document.fileURL.lastPathComponent,
+                    sourceIdentifier: document.noteSourceIdentifier,
                     createdAt: highlight.createdAt,
                     bulletPoints: [
                         "Saved from \(locationLabel(for: draft.pageIndex).lowercased()).",
@@ -367,7 +519,7 @@ final class AppModel {
             id: UUID(),
             kind: .note,
             title: "\(document.title) Note",
-            sourceIdentifier: document.fileURL.lastPathComponent,
+            sourceIdentifier: document.noteSourceIdentifier,
             createdAt: Date(),
             bulletPoints: noteBulletPoints(from: trimmedNote),
             highlightExcerpt: currentSelection?.text,
@@ -529,14 +681,21 @@ final class AppModel {
     }
 
     private func restoreFromReadingState(_ state: ReadingState) {
-        for url in state.documentURLs {
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+        // The library lists newest first and `importDocument` inserts at the front,
+        // so replay the saved order back to front to keep it stable across launches.
+        for url in state.documentURLs.reversed() {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                missingLibraryFiles.append(url)
+                continue
+            }
             _ = documentLibrary.importDocument(at: url)
         }
 
-        readingPositionsByDocument = state.positions
+        // Positions recorded this launch are newer than the file's.
+        readingPositionsByDocument.merge(state.positions) { current, _ in current }
 
-        if let activeURL = state.activeDocumentURL,
+        if selectedDocument == nil,
+           let activeURL = state.activeDocumentURL,
            let doc = documentLibrary.documents.first(where: { $0.fileURL == activeURL.standardizedFileURL }) {
             activateDocument(doc)
         }
@@ -547,7 +706,13 @@ final class AppModel {
     }
 
     private func persistReadingState() {
-        guard let readingStateStore else { return }
+        guard let readingStateStore, canPersistReadingState else { return }
+
+        // Saving before the restore lands would overwrite the file with a partial library.
+        guard !isRestoringReadingState else {
+            scheduleReadingStateSave()
+            return
+        }
 
         if let selectedDocument, let currentPageIndex {
             readingPositionsByDocument[positionKey(for: selectedDocument)] = currentPageIndex
@@ -573,21 +738,32 @@ final class AppModel {
     private func triggerAutoSummary(document: ReaderDocument, pageIndex: Int) {
         let key = "\(document.id)-\(pageIndex)"
 
+        let isNewPage = key != lastAutoSummaryKey
+        if isNewPage {
+            lastAutoSummaryKey = key
+            autoSummaryError = nil
+        }
+
         if let cached = pageSummaries[key] {
             autoSummary = cached
             autoConceptTags = conceptsByPage[key] ?? []
             return
         }
 
-        guard !summarizedPageKeys.contains(key) else { return }
+        if let failure = pageSummaryFailures[key] {
+            if isNewPage {
+                autoSummaryError = failure
+            }
+            return
+        }
 
         summaryTask?.cancel()
         summaryTask = Task {
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: autoSummaryDelay)
             guard !Task.isCancelled else { return }
             guard self.selectedDocument?.id == document.id,
                   self.currentPageIndex == pageIndex else { return }
-            guard providerStatuses.contains(where: \.isAvailable) else { return }
+            guard providerStatuses.textAnswerBlocker == nil else { return }
 
             do {
                 let answer = try await documentAssistant.answer(
@@ -598,12 +774,12 @@ final class AppModel {
                     selection: nil,
                     currentPageIndex: pageIndex,
                     visiblePageIndexes: [pageIndex],
-                    visualAsset: nil
+                    visualAsset: nil,
+                    onProgress: { _ in }
                 )
 
                 let cleanedAnswer = Self.stripThinkingTags(answer)
                 let (summary, tags) = parseSummaryAndTags(cleanedAnswer)
-                summarizedPageKeys.insert(key)
                 pageSummaries[key] = summary
                 conceptsByPage[key] = tags
 
@@ -612,8 +788,15 @@ final class AppModel {
                     autoSummary = summary
                     autoConceptTags = tags
                 }
+            } catch where Self.isCancellation(error) {
+                return
             } catch {
-                // Silent failure for background feature
+                // One attempt per page: a failing provider must not be hit on every scroll.
+                let failure = "Auto-summary failed: \(error.localizedDescription)"
+                pageSummaryFailures[key] = failure
+                guard self.selectedDocument?.id == document.id,
+                      self.currentPageIndex == pageIndex else { return }
+                autoSummaryError = failure
             }
         }
     }
@@ -664,20 +847,88 @@ final class AppModel {
         isHighlightToolEnabled = false
         savedHighlights = []
         autoSummary = nil
+        autoSummaryError = nil
+        lastAutoSummaryKey = nil
         autoConceptTags = []
         totalDocumentPages = nil
         summaryTask?.cancel()
+        askTask?.cancel()
+        currentAskID = nil
+        isAskingQuestion = false
+        askProgress = nil
 
         currentPageIndex = readingPositionsByDocument[positionKey(for: document)]
 
         try? refreshSavedNotesForSelectedDocument()
         try? refreshSavedHighlightsForSelectedDocument()
-        documentVisuals = (try? visualExtractor.extractVisuals(for: document)) ?? []
-        selectedVisual = documentVisuals.first
+        startVisualExtraction(for: document)
+    }
+
+    /// Scans every page for figures on a GCD thread; the panel shows progress and
+    /// a Cancel button meanwhile. Switching documents cancels the previous scan.
+    private func startVisualExtraction(for document: ReaderDocument) {
+        visualExtractionTask?.cancel()
+        let extractionID = UUID()
+        currentVisualExtractionID = extractionID
+        isExtractingVisuals = true
+        visualExtractionProgress = nil
+        visualExtractionError = nil
+        let extractor = visualExtractor
+        // Progress arrives on the GCD thread; hop back to the actor to publish it.
+        let reportProgress: @Sendable (PageScanProgress) -> Void = { [weak self] progress in
+            Task { @MainActor in
+                self?.noteVisualExtractionProgress(progress, extractionID: extractionID)
+            }
+        }
+
+        visualExtractionTask = Task { [weak self] in
+            defer { self?.finishVisualExtraction(extractionID: extractionID) }
+
+            do {
+                let visuals = try await BlockingWork.run { isCancelled in
+                    try extractor.extractVisuals(for: document, isCancelled: isCancelled, onProgress: reportProgress)
+                }
+
+                guard let self, !Task.isCancelled, self.currentVisualExtractionID == extractionID else {
+                    return
+                }
+                documentVisuals = visuals
+                selectedVisual = visuals.first
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self, self.currentVisualExtractionID == extractionID else {
+                    return
+                }
+                visualExtractionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func noteVisualExtractionProgress(_ progress: PageScanProgress, extractionID: UUID) {
+        guard currentVisualExtractionID == extractionID else {
+            return
+        }
+
+        visualExtractionProgress = progress
+    }
+
+    private func finishVisualExtraction(extractionID: UUID) {
+        guard currentVisualExtractionID == extractionID else {
+            return
+        }
+
+        isExtractingVisuals = false
+        visualExtractionProgress = nil
     }
 
     private func refreshSavedNotesForSelectedDocument() throws {
-        try refreshSavedNotes(query: selectedDocument?.fileURL.lastPathComponent ?? "")
+        guard let selectedDocument, let noteStore else {
+            try refreshSavedNotes()
+            return
+        }
+
+        savedNotes = try noteStore.notes(forSource: selectedDocument.noteSourceIdentifier, limit: Self.savedNotesLimit)
     }
 
     private func refreshSavedHighlightsForSelectedDocument() throws {
@@ -748,7 +999,7 @@ final class AppModel {
             id: savedHighlight.id,
             kind: .highlight,
             title: "\(document.title) Highlight",
-            sourceIdentifier: document.fileURL.lastPathComponent,
+            sourceIdentifier: document.noteSourceIdentifier,
             createdAt: savedHighlight.createdAt,
             bulletPoints: highlightBulletPoints(noteText: noteText ?? "", selection: currentSelection),
             highlightExcerpt: currentSelection.text,
@@ -761,14 +1012,13 @@ final class AppModel {
     }
 
     private func documentTitle(for summary: KnowledgeNoteSummary) -> String {
-        if let selectedDocument,
-           selectedDocument.fileURL.lastPathComponent == summary.sourceIdentifier {
+        if let selectedDocument, selectedDocument.noteSourceIdentifier == summary.sourceIdentifier {
             return selectedDocument.title
         }
 
-        return summary.sourceIdentifier
-            .replacingOccurrences(of: ".pdf", with: "", options: .caseInsensitive)
-            .replacingOccurrences(of: ".epub", with: "", options: .caseInsensitive)
+        return URL(fileURLWithPath: summary.sourceIdentifier)
+            .deletingPathExtension()
+            .lastPathComponent
     }
 
     private func resolveVisualForExplanation(in document: ReaderDocument) throws -> DocumentVisualAsset {
@@ -813,12 +1063,33 @@ final class AppModel {
         return lines.joined(separator: "\n")
     }
 
+    /// Wraps the question in its own task so `cancelQuestion()` can stop text
+    /// extraction between pages or abandon a slow model.
     private func submitQuestion(_ question: String, for document: ReaderDocument, scope: DocumentQueryScope, visualAsset: DocumentVisualAsset?) async {
+        askTask?.cancel()
+        let askID = UUID()
+        currentAskID = askID
+        let task = Task {
+            await performQuestion(question, for: document, scope: scope, visualAsset: visualAsset, askID: askID)
+        }
+        askTask = task
+        await task.value
+    }
+
+    /// A superseded ask (another question submitted while this one was in flight)
+    /// must not touch the shared in-progress state the newer ask now owns.
+    private func performQuestion(_ question: String, for document: ReaderDocument, scope: DocumentQueryScope, visualAsset: DocumentVisualAsset?, askID: UUID) async {
         chatError = nil
         chatInput = ""
         isAskingQuestion = true
+        askProgress = nil
         chatTranscript.append(ChatMessage(role: .user, content: question))
-        defer { isAskingQuestion = false }
+        defer {
+            if currentAskID == askID {
+                isAskingQuestion = false
+                askProgress = nil
+            }
+        }
 
         let enrichedQuestion = chatTranscript.count > 1 ? questionWithConversationContext(question) : question
 
@@ -831,8 +1102,21 @@ final class AppModel {
                 selection: currentSelection,
                 currentPageIndex: currentPageIndex,
                 visiblePageIndexes: visiblePageIndexes,
-                visualAsset: visualAsset
+                visualAsset: visualAsset,
+                onProgress: { [weak self] progress in
+                    Task { @MainActor in
+                        guard let self, self.currentAskID == askID else {
+                            return
+                        }
+
+                        self.askProgress = progress
+                    }
+                }
             )
+            guard currentAskID == askID else {
+                return
+            }
+
             chatTranscript.append(ChatMessage(role: .assistant, content: Self.stripThinkingTags(answer)))
 
             do {
@@ -841,10 +1125,25 @@ final class AppModel {
             } catch {
                 chatError = "Answer generated, but note capture failed: \(error.localizedDescription)"
             }
+        } catch where Self.isCancellation(error) {
+            guard currentAskID == askID else {
+                return
+            }
+
+            chatTranscript.append(ChatMessage(role: .assistant, content: Self.cancelledAnswerText))
         } catch {
             chatError = error.localizedDescription
             chatTranscript.append(ChatMessage(role: .assistant, content: error.localizedDescription))
         }
+    }
+
+    private static let cancelledAnswerText = "Cancelled before an answer arrived."
+
+    /// Cancellation arrives in three shapes: `CancellationError` from `BlockingWork`
+    /// and `ProcessCommandRunner`, `URLError(.cancelled)` from `URLSession`, and a
+    /// provider error thrown after the task itself was cancelled.
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
     }
 }
 

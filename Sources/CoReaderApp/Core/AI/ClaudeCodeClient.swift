@@ -7,17 +7,24 @@ struct ClaudeCodeClient: ClaudeGenerating {
         self.commandRunner = commandRunner
     }
 
+    /// Upper bound for one generation; the CLI streams nothing back until it is done.
+    static let generationTimeout: Duration = .seconds(300)
+
     func generate(prompt: String) async throws -> String {
+        // The prompt travels over stdin: argv is size-limited and visible in `ps`.
         let result = try await commandRunner.run(
-            executable: "/usr/bin/env",
-            arguments: [
-                "claude",
-                "-p",
-                prompt,
-                "--output-format",
-                "text",
-                "--no-session-persistence"
-            ]
+            ShellCommand(
+                executable: "/usr/bin/env",
+                arguments: [
+                    "claude",
+                    "-p",
+                    "--output-format",
+                    "text",
+                    "--no-session-persistence"
+                ],
+                standardInput: prompt,
+                timeout: Self.generationTimeout
+            )
         )
 
         guard result.exitCode == 0 else {

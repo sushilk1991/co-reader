@@ -93,6 +93,29 @@ struct ReaderVisualsPanel: View {
         appModel.selectedVisual ?? appModel.documentVisuals.first
     }
 
+    /// Shown while pages are being scanned for figures; the scan runs off the main
+    /// thread and can be abandoned.
+    private var extractionProgress: some View {
+        VStack(spacing: 12) {
+            if let progress = appModel.visualExtractionProgress {
+                ProgressView(value: progress.fraction)
+                    .progressViewStyle(.linear)
+                Text("Scanning \(progress.label) for figures")
+                    .font(.caption)
+                    .foregroundStyle(ReaderTheme.smoke)
+            } else {
+                ProgressView("Scanning pages for figures")
+                    .font(.caption)
+            }
+
+            Button("Cancel", action: appModel.cancelVisualExtraction)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, minHeight: 260, alignment: .center)
+    }
+
     private var hasVisionModel: Bool {
         visionModelName != nil
     }
@@ -268,12 +291,23 @@ struct ReaderVisualsPanel: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ContentUnavailableView(
-                "No extracted visuals yet",
-                systemImage: "photo.on.rectangle.angled",
-                description: Text("When a PDF exposes embedded images, they will appear here as separate figure crops instead of full-page screenshots.")
-            )
-            .frame(maxWidth: .infinity, minHeight: 260, alignment: .center)
+            if appModel.isExtractingVisuals {
+                extractionProgress
+            } else if let failure = appModel.visualExtractionError {
+                ContentUnavailableView(
+                    "Visual extraction failed",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(failure)
+                )
+                .frame(maxWidth: .infinity, minHeight: 260, alignment: .center)
+            } else {
+                ContentUnavailableView(
+                    "No extracted visuals yet",
+                    systemImage: "photo.on.rectangle.angled",
+                    description: Text("When a PDF exposes embedded images, they will appear here as separate figure crops instead of full-page screenshots.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 260, alignment: .center)
+            }
 
             if appModel.currentPageIndex != nil {
                 Button("Explain Current Page Snapshot", systemImage: "eye") {

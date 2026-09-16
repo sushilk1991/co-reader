@@ -22,24 +22,13 @@ struct OllamaClient: OllamaProbing {
                 return .unavailable(reason: "Ollama responded with an unexpected status.")
             }
 
-            let models = try decodeModels(from: data)
-            return .available(models: models)
+            let tags = try OllamaModelCatalog.decodeTags(from: data)
+            return .available(
+                models: OllamaModelCatalog.chatModelNames(in: tags),
+                skippedEmbeddingModels: OllamaModelCatalog.skippedModelNames(in: tags)
+            )
         } catch {
             return .unavailable(reason: "Ollama server did not respond")
         }
-    }
-
-    private func decodeModels(from data: Data) throws -> [String] {
-        let object = try JSONSerialization.jsonObject(with: data)
-        guard
-            let payload = object as? [String: Any],
-            let models = payload["models"] as? [[String: Any]]
-        else {
-            return []
-        }
-
-        return models
-            .compactMap { $0["name"] as? String }
-            .sorted()
     }
 }

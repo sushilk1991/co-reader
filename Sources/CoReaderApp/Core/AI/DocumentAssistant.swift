@@ -21,27 +21,35 @@ struct DocumentAssistant: DocumentAssisting {
         selection: DocumentSelection? = nil,
         currentPageIndex: Int? = nil,
         visiblePageIndexes: [Int] = [],
-        visualAsset: DocumentVisualAsset? = nil
+        visualAsset: DocumentVisualAsset? = nil,
+        onProgress: @escaping @Sendable (DocumentAssistantProgress) -> Void = { _ in }
     ) async throws -> String {
-        let context = try extractor.extractContext(
-            for: document,
-            question: question,
-            scope: scope,
-            selection: selection,
-            currentPageIndex: currentPageIndex,
-            visiblePageIndexes: visiblePageIndexes
-        )
+        let target = try executionTarget(from: providerStatuses, requiresVision: visualAsset != nil)
+
+        // Text extraction walks every page synchronously; keep it off the calling
+        // actor and let task cancellation stop it between pages.
+        let extractor = extractor
+        let context = try await BlockingWork.run { isCancelled in
+            try extractor.extractContext(
+                for: document,
+                question: question,
+                scope: scope,
+                selection: selection,
+                currentPageIndex: currentPageIndex,
+                visiblePageIndexes: visiblePageIndexes,
+                isCancelled: isCancelled,
+                onProgress: { onProgress(.extractingContext($0)) }
+            )
+        }
         let prompt = buildPrompt(question: question, scope: scope, context: context, visualAsset: visualAsset)
 
-        switch preferredExecutionTarget(from: providerStatuses, requiresVision: visualAsset != nil) {
+        switch target {
         case let .ollama(model):
+            onProgress(.generating(model: model))
             return try await ollamaGenerator.generate(model: model, prompt: prompt, imageData: visualAsset?.imageData)
         case .claude:
+            onProgress(.generating(model: AIProviderKind.claudeCLI.displayName))
             return try await claudeGenerator.generate(prompt: prompt)
-        case .unavailableVision:
-            throw DocumentAssistantError.noVisionCapableProvider
-        case .unavailable:
-            throw DocumentAssistantError.noAvailableProvider
         }
     }
 
@@ -73,26 +81,26 @@ struct DocumentAssistant: DocumentAssisting {
         """
     }
 
-    private func preferredExecutionTarget(from providerStatuses: [AIProviderStatus], requiresVision: Bool) -> ExecutionTarget {
+    /// Decided before any page text is read, so an unanswerable request fails
+    /// without paying for the extraction.
+    private func executionTarget(from providerStatuses: [AIProviderStatus], requiresVision: Bool) throws -> ExecutionTarget {
         if requiresVision {
-            if let model = providerStatuses
-                .compactMap(\.preferredVisionModel)
-                .first {
-                return .ollama(model: model)
+            guard let model = providerStatuses.compactMap(\.preferredVisionModel).first else {
+                throw DocumentAssistantError.noVisionCapableProvider
             }
 
-            return .unavailableVision
+            return .ollama(model: model)
         }
 
-        if let ollama = providerStatuses.first(where: { $0.kind == .ollama && $0.isAvailable && !$0.models.isEmpty }) {
-            return .ollama(model: ollama.models[0])
+        if let blocker = providerStatuses.textAnswerBlocker {
+            throw blocker
         }
 
-        if providerStatuses.contains(where: { $0.kind == .claudeCLI && $0.isAvailable }) {
-            return .claude
+        if let model = providerStatuses.compactMap(\.preferredChatModel).first {
+            return .ollama(model: model)
         }
 
-        return .unavailable
+        return .claude
     }
 
     private func visualPromptContext(for visualAsset: DocumentVisualAsset?) -> String {
@@ -111,6 +119,4 @@ struct DocumentAssistant: DocumentAssisting {
 private enum ExecutionTarget {
     case ollama(model: String)
     case claude
-    case unavailableVision
-    case unavailable
 }
