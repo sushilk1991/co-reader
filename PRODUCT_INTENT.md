@@ -82,6 +82,8 @@ resolved below, each with a failing regression test first.
    itself or cycles is entered once per path. Deeper nesting is skipped, not
    scanned. The scanner composes both `cm` and form matrices as M × CTM,
    so nested transforms place figure crops in the correct page coordinates.
+   `PDFVisualExtractor.renderPage` draws the page upright and applies the
+   top-left flip only to the crop rectangle, so each crop contains its figure.
 3. `ProcessCommandRunner` (`scheduleTimeout`, `expire`) — every `ShellCommand` carries a
    `timeout`; on expiry the process is terminated and `ShellCommandError.timedOut`
    is thrown. `ClaudeCLIProbe.probeTimeout` (15 s) turns that into

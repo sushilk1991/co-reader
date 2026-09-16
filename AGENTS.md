@@ -38,7 +38,7 @@ via `make build-and-run-background`, which launches the Debug `.app` through
   through `Core/Concurrency/BlockingWork.swift` (cancellable, reports
   progress); child processes go through `ShellCommand`, which always carries
   a timeout. `PRODUCT_INTENT.md` "Current state" lists the defects this
-  prevents and the known follow-ups.
+  prevents.
 
 ## Maintaining this file
 
