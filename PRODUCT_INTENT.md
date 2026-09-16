@@ -1,7 +1,8 @@
 # Product intent
 
-Last audited from source: 2026-09-15 (v0.2.1, marketing version in `project.yml`),
-re-audited the same day after the fourteen defects below were fixed.
+Last audited from source: 2026-09-16 (v0.2.1, marketing version in `project.yml`).
+The fourteen original defects were fixed on 2026-09-15; their five follow-ups
+were fixed on 2026-09-16.
 
 CoReader is a local macOS reader for PDFs and EPUBs: highlight passages, take
 notes, and ask questions against the open document. Confirmed direction: a
@@ -62,12 +63,12 @@ Grounded in what is absent from the targets and in `6c3f0b6`:
 
 ## Current state (not polished)
 
-Unit tests pass (`swift test`, 2026-09-15). That does
+Unit tests pass (`swift test` and `make test`, 2026-09-16). That does
 not mean the GUI is stable. The fourteen findings below came from reading this
 tree, not from a crash log. Each was fixed on 2026-09-15 with a failing test
 first where a unit test could express the rule; the entries now describe what
-the code does today and what is still open. Follow-ups found while fixing are
-listed after item 14 and are not scheduled here.
+the code does today. The five follow-ups found during those fixes are also
+resolved below, each with a failing regression test first.
 
 ### Crashes and freezes
 
@@ -79,7 +80,10 @@ listed after item 14 and are not scheduled here.
 2. `PDFImagePlacementScanner.defaultMaxFormDepth`, `PDFFormNesting` — Form XObject recursion is bounded
    by `defaultMaxFormDepth` (12) and an ancestor set, so a form that draws
    itself or cycles is entered once per path. Deeper nesting is skipped, not
-   scanned.
+   scanned. The scanner composes both `cm` and form matrices as M × CTM,
+   so nested transforms place figure crops in the correct page coordinates.
+   `PDFVisualExtractor.renderPage` draws the page upright and applies the
+   top-left flip only to the crop rectangle, so each crop contains its figure.
 3. `ProcessCommandRunner` (`scheduleTimeout`, `expire`) — every `ShellCommand` carries a
    `timeout`; on expiry the process is terminated and `ShellCommandError.timedOut`
    is thrown. `ClaudeCLIProbe.probeTimeout` (15 s) turns that into
@@ -101,7 +105,10 @@ listed after item 14 and are not scheduled here.
    "N of M pages" with a Cancel button while an Ask is in flight.
 7. `DocumentPreviewPanel` (`onPageCountChange`, `onSectionCountChange`) — the EPUB page count now comes from
    `EPUBPreviewView`'s own load via `onSectionCountChange`; the panel no
-   longer calls `LiveEPUBBookLoader.loadBook` on the MainActor.
+   longer loads the book synchronously on the MainActor.
+   `LiveEPUBBookLoader.loadBook` awaits `ProcessCommandRunner` for `ditto`,
+   with a 60-second extraction timeout and a readable error on expiry.
+   Cache access and parsing run through `BlockingWork`.
 
 ### Features that do not actually work
 
@@ -126,7 +133,12 @@ listed after item 14 and are not scheduled here.
     embedding models are installed.
 11. `ClaudeCodeClient.generate` — the prompt goes on stdin; argv is
     `claude -p --output-format text --no-session-persistence`. The
-    `AIProviderKind` surface is unchanged.
+    `AIProviderKind` surface is unchanged. `ClaudeCLILocator` finds the binary
+    once per session (common install paths, then `zsh -l -c 'command -v claude'`)
+    and both the probe and generation spawn that path directly, so a minimal GUI
+    PATH works wherever the availability probe succeeds and login-shell dotfile
+    output never reaches an answer. Missing installations report
+    "claude not found on PATH".
 12. `ReadingStateStore.load` and `save` (`coordinatedRead`, `coordinatedWrite`) — reads and writes go through
     `NSFileCoordinator`; a dataless iCloud placeholder triggers
     `startDownloadingUbiquitousItem` and returns `notYetDownloaded`, in which
@@ -136,6 +148,12 @@ listed after item 14 and are not scheduled here.
     (`AppModel.rebuildKnowledgeIndexIfNeeded`), so notes written on
     another Mac become searchable. The storage strategy (which files sync) is
     unchanged and remains an open question.
+    `LiveDocumentHighlightStore` also reads through `NSFileCoordinator` on
+    `BlockingWork`, including reads needed for edits. A dataless highlight
+    file requests download, reports that highlights are still downloading in
+    the session banner, and rejects edits until the file is available. Writes are coordinated;
+    edits run serially so concurrent saves preserve both highlights.
+    The reader discards loads completed after switching documents.
 13. `ReaderDocument.noteSourceIdentifier`, used by `ChatKnowledgeCapture` —
     notes are scoped by the full standardized path. Notes saved under the old
     filename scope are not listed under a document but remain findable through
@@ -151,29 +169,13 @@ listed after item 14 and are not scheduled here.
     summary task, and the card (`autoSummaryUnavailableReason`), so the
     notice clears the moment a chat-capable provider is detected and pages
     read meanwhile are summarised on their next visit.
-    Only the failure card is dismissable: it reports an event. The
+    Successful summaries are cached too. A dismissed summary stays hidden
+    across position updates on the same page, including visible-page changes,
+    and returns when the reader revisits that page.
+    Summary and failure cards are dismissable. The
     "Auto-Summary Unavailable" notice states current app state, has no
     dismiss control, and stays exactly as long as it is true
     (`PageSummaryCardContent`).
-
-Follow-ups noticed while fixing, not built:
-
-- `PDFImagePlacementScanner.concatenateMatrixCallback` concatenates `cm` and form matrices in
-  the wrong order (CTM × M instead of M × CTM), so nested transforms place
-  figure crops wrongly. Only matters once the crop coordinates matter.
-- `ClaudeCodeClient.generate` resolves `claude` via `/usr/bin/env`; a
-  GUI-launched app inherits a minimal PATH, so the generation path can fail
-  even when the probe (which falls back to a login shell) succeeds.
-- `LiveDocumentHighlightStore.loadHighlights` still reads highlight files with
-  `Data(contentsOf:)` on the MainActor, which is the same iCloud placeholder
-  hazard as item 12 for highlights.
-- `AppModel.triggerAutoSummary`'s cached-summary branch re-shows a dismissed summary card on every position
-  update for the same page, including scrolls that only change the visible
-  page set. The failure card is gated on a page change (item 14); the success
-  card keeps the older behaviour.
-- `LiveEPUBBookLoader.loadBook` still spawns `ditto` through `Process` with
-  `waitUntilExit()` and no timeout, outside `ShellCommand`. It runs off the
-  MainActor (item 7), so a hung `ditto` pins a pool thread rather than the UI.
 
 Polish that matches “unpolished”: window min size 1120×760
 (`CoReaderApp.body`); inspector and library closed at launch; EPUB

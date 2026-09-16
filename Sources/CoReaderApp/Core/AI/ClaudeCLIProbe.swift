@@ -1,76 +1,49 @@
 import Foundation
 
 struct ClaudeCLIProbe: ClaudeCLIProbing {
+    let locator: ClaudeCLILocator
     let commandRunner: ShellCommandRunning
 
-    init(commandRunner: ShellCommandRunning = ProcessCommandRunner()) {
+    init(
+        locator: ClaudeCLILocator = .shared,
+        commandRunner: ShellCommandRunning = ProcessCommandRunner()
+    ) {
+        self.locator = locator
         self.commandRunner = commandRunner
     }
 
-    /// `claude --version` normally returns in well under a second; a login shell adds
-    /// dotfile start-up on top.
+    /// `claude --version` normally returns in well under a second.
     static let probeTimeout: Duration = .seconds(15)
 
     func probe() async throws -> AIProviderProbeResult {
-        // Try direct paths first (faster than spawning a shell)
-        for path in Self.commonClaudePaths {
-            if FileManager.default.isExecutableFile(atPath: path) {
-                do {
-                    let result = try await commandRunner.run(versionCommand(executable: path, arguments: ["--version"]))
-                    if result.exitCode == 0 {
-                        let version = result.standardOutput
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                            .split(separator: "\n")
-                            .first
-                            .map(String.init) ?? "available"
-                        return .available(version: version.isEmpty ? "available" : version)
-                    }
-                } catch let error as ShellCommandError {
-                    // A hung binary will not be rescued by the login-shell fallback.
-                    return .unavailable(reason: error.localizedDescription)
-                } catch {
-                    continue
-                }
-            }
-        }
-
-        // Fallback: try via login shell to get full PATH
         do {
-            let result = try await commandRunner.run(
-                versionCommand(executable: "/bin/zsh", arguments: ["-l", "-c", "claude --version"])
-            )
-            if result.exitCode == 0 {
-                let version = result.standardOutput
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .split(separator: "\n")
-                    .first
-                    .map(String.init) ?? "available"
-                return .available(version: version.isEmpty ? "available" : version)
+            let result = try await commandRunner.run(ShellCommand(
+                executable: try await locator.executablePath(),
+                arguments: ["--version"],
+                standardInput: nil,
+                timeout: Self.probeTimeout
+            ))
+            guard result.exitCode == EXIT_SUCCESS else {
+                return .unavailable(reason: failureReason(from: result))
             }
-        } catch let error as ShellCommandError {
+
+            return .available(version: version(from: result))
+        } catch {
             return .unavailable(reason: error.localizedDescription)
-        } catch {}
-
-        return .unavailable(reason: "claude not found on PATH")
+        }
     }
 
-    private func versionCommand(executable: String, arguments: [String]) -> ShellCommand {
-        ShellCommand(
-            executable: executable,
-            arguments: arguments,
-            standardInput: nil,
-            timeout: Self.probeTimeout
-        )
+    private func version(from result: ShellCommandResult) -> String {
+        let version = result.standardOutput
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\n")
+            .first
+            .map(String.init) ?? "available"
+        return version.isEmpty ? "available" : version
     }
 
-    private static let commonClaudePaths: [String] = {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return [
-            "\(home)/.claude/local/bin/claude",
-            "/usr/local/bin/claude",
-            "/opt/homebrew/bin/claude",
-            "\(home)/.npm-global/bin/claude",
-            "\(home)/.nvm/versions/node/default/bin/claude",
-        ]
-    }()
+    private func failureReason(from result: ShellCommandResult) -> String {
+        let stderr = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+        return stderr.isEmpty ? "claude --version exited with code \(result.exitCode)." : stderr
+    }
 }

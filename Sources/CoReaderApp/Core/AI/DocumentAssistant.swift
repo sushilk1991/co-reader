@@ -26,21 +26,17 @@ struct DocumentAssistant: DocumentAssisting {
     ) async throws -> String {
         let target = try executionTarget(from: providerStatuses, requiresVision: visualAsset != nil)
 
-        // Text extraction walks every page synchronously; keep it off the calling
-        // actor and let task cancellation stop it between pages.
-        let extractor = extractor
-        let context = try await BlockingWork.run { isCancelled in
-            try extractor.extractContext(
-                for: document,
-                question: question,
-                scope: scope,
-                selection: selection,
-                currentPageIndex: currentPageIndex,
-                visiblePageIndexes: visiblePageIndexes,
-                isCancelled: isCancelled,
-                onProgress: { onProgress(.extractingContext($0)) }
-            )
-        }
+        // Extraction owns its blocking reads and awaits EPUB subprocesses without pinning a thread.
+        let context = try await extractor.extractContext(
+            for: document,
+            question: question,
+            scope: scope,
+            selection: selection,
+            currentPageIndex: currentPageIndex,
+            visiblePageIndexes: visiblePageIndexes,
+            isCancelled: { Task.isCancelled },
+            onProgress: { onProgress(.extractingContext($0)) }
+        )
         let prompt = buildPrompt(question: question, scope: scope, context: context, visualAsset: visualAsset)
 
         switch target {

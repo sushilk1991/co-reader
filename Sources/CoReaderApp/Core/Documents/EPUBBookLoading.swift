@@ -1,5 +1,5 @@
 import Foundation
 
 protocol EPUBBookLoading: Sendable {
-    func loadBook(from fileURL: URL) throws -> EPUBBook
+    func loadBook(from fileURL: URL) async throws -> EPUBBook
 }

@@ -132,7 +132,7 @@ struct AppModelReaderStateTests {
     }
 
     @Test
-    func capturePDFHighlightsPersistsGeometryColorAndNoteMetadata() throws {
+    func capturePersistsPDFHighlights() async throws {
         let noteStore = StubNoteStore()
         let highlightStore = StubDocumentHighlightStore()
         let appModel = AppModel(
@@ -155,7 +155,7 @@ struct AppModelReaderStateTests {
             ]
         )
 
-        appModel.capturePDFHighlights([draft])
+        await appModel.capturePDFHighlights([draft])
 
         #expect(appModel.savedHighlights.count == 1)
         #expect(appModel.savedHighlights[0].color == .mint)
@@ -167,8 +167,32 @@ struct AppModelReaderStateTests {
         #expect(try highlightStore.loadHighlights(for: ReaderDocument(fileURL: documentURL)).count == 1)
     }
 
+    /// A highlight file that cannot be read is a session condition, like reading
+    /// state that is still downloading, so it belongs in the banner, not the Ask panel.
     @Test
-    func deleteHighlightRemovesStoredGeometryAndKnowledgeEntry() throws {
+    func highlightLoadFailureShowsAsSessionNotice() async throws {
+        let highlightStore = StubDocumentHighlightStore()
+        highlightStore.loadError = FailingHighlightLoad.stillDownloading
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore(),
+            highlightStore: highlightStore
+        )
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Cloud Highlights.pdf"))
+        await waitUntil { appModel.sessionNotice != nil }
+
+        #expect(appModel.sessionNotice == FailingHighlightLoad.stillDownloading.localizedDescription)
+        #expect(appModel.chatError == nil)
+
+        appModel.dismissSessionNotice()
+
+        #expect(appModel.sessionNotice == nil)
+    }
+
+    @Test
+    func deleteRemovesHighlight() async throws {
         let noteStore = StubNoteStore()
         let highlightStore = StubDocumentHighlightStore()
         let appModel = AppModel(
@@ -188,8 +212,8 @@ struct AppModelReaderStateTests {
             rects: [CGRect(x: 32, y: 412, width: 220, height: 18)]
         )
 
-        appModel.capturePDFHighlights([draft])
-        appModel.deleteHighlight(draft.id)
+        await appModel.capturePDFHighlights([draft])
+        await appModel.deleteHighlight(draft.id)
 
         #expect(appModel.savedHighlights.isEmpty)
         #expect(appModel.pdfDocumentHighlights.isEmpty)
@@ -198,7 +222,7 @@ struct AppModelReaderStateTests {
     }
 
     @Test
-    func selectingDifferentDocumentResetsReaderSessionAndScopesNotes() throws {
+    func selectionScopesReaderState() async throws {
         let noteStore = StubNoteStore()
         let appModel = AppModel(
             documentAssistant: StubDocumentAssistant(result: "Unused"),
@@ -269,9 +293,10 @@ struct AppModelReaderStateTests {
         #expect(appModel.noteDraft.isEmpty)
         #expect(appModel.savedNotes.count == 1)
         #expect(appModel.savedNotes[0].sourceIdentifier == "/tmp/Book Two.pdf")
+        await waitUntil { appModel.savedHighlights.count == 1 }
         #expect(appModel.savedHighlights.count == 1)
-        #expect(appModel.savedHighlights[0].pageIndex == 9)
-        #expect(appModel.savedHighlights[0].quotedText == "Fresh quote")
+        #expect(appModel.savedHighlights.first?.pageIndex == 9)
+        #expect(appModel.savedHighlights.first?.quotedText == "Fresh quote")
     }
 
     @Test
@@ -674,12 +699,25 @@ private struct StubVisualExtractor: DocumentVisualExtracting {
     }
 }
 
+private enum FailingHighlightLoad: LocalizedError {
+    case stillDownloading
+
+    var errorDescription: String? {
+        "Highlights are still downloading from iCloud."
+    }
+}
+
 @MainActor
 private final class StubDocumentHighlightStore: DocumentHighlightStoring {
     private(set) var storedHighlights: [String: [PDFDocumentHighlight]] = [:]
+    var loadError: (any Error)?
 
     func loadHighlights(for document: ReaderDocument) throws -> [PDFDocumentHighlight] {
-        storedHighlights[document.fileURL.path] ?? []
+        if let loadError {
+            throw loadError
+        }
+
+        return storedHighlights[document.fileURL.path] ?? []
     }
 
     func upsertHighlight(_ highlight: PDFDocumentHighlight, for document: ReaderDocument) throws {

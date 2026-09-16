@@ -3,6 +3,48 @@ import Testing
 @testable import CoReaderApp
 
 struct EPUBBookLoaderTests {
+    /// Extraction must surface the bounded runner's timeout instead of waiting forever.
+    @Test
+    func extractionReportsTimeout() async throws {
+        let fixture = try EPUBFixture.make()
+        let runner = EPUBTimeoutRunner()
+        let cache = fixture.workingDirectory.appending(path: "TimeoutCache")
+        let loader = LiveEPUBBookLoader(cacheDirectory: cache, commandRunner: runner)
+
+        do {
+            _ = try await loader.loadBook(from: fixture.archiveURL)
+            Issue.record("Expected extraction to report the timeout.")
+        } catch {
+            #expect(error.localizedDescription.contains("ditto did not finish within 60 seconds"))
+        }
+
+        // A timed-out extraction leaves no partial cache that could be reopened as a book.
+        let command = try #require(await runner.command)
+        #expect(command.executable == "/usr/bin/ditto")
+        #expect(Array(command.arguments.prefix(3)) == ["-x", "-k", fixture.archiveURL.path])
+        #expect(command.timeout == .seconds(60))
+        #expect(command.standardInput == nil)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: cache.path).isEmpty)
+    }
+
+    /// Cancellation of the new async extraction path must still remove its partial cache.
+    @Test
+    func cancellationRemovesPartial() async throws {
+        let fixture = try EPUBFixture.make()
+        let cache = fixture.workingDirectory.appending(path: "CancelledCache")
+        let loader = LiveEPUBBookLoader(cacheDirectory: cache, commandRunner: EPUBCancelledRunner())
+        let load = Task { try await loader.loadBook(from: fixture.archiveURL) }
+
+        do {
+            _ = try await load.value
+            Issue.record("Expected cancelled extraction.")
+        } catch {
+            #expect(error is CancellationError)
+        }
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: cache.path).isEmpty)
+    }
+
     @Test
     func parserResolvesPackagePathFromContainerXML() throws {
         let parser = EPUBPackageParser()
@@ -41,12 +83,12 @@ struct EPUBBookLoaderTests {
     }
 
     @Test
-    func loaderExtractsBookFromEPUBArchive() throws {
+    func loaderExtractsEPUBArchive() async throws {
         let fixture = try EPUBFixture.make()
         let cacheDirectory = fixture.workingDirectory.appending(path: "Cache", directoryHint: .isDirectory)
         let loader = LiveEPUBBookLoader(cacheDirectory: cacheDirectory)
 
-        let book = try loader.loadBook(from: fixture.archiveURL)
+        let book = try await loader.loadBook(from: fixture.archiveURL)
 
         #expect(book.title == "Sample EPUB")
         #expect(book.sections.count == 2)
@@ -223,5 +265,23 @@ private func xmlEncodingName(for encoding: String.Encoding) -> String {
         "windows-1252"
     default:
         "UTF-8"
+    }
+}
+
+/// Exercise the loader's actual command contract while making expiry immediate.
+private actor EPUBTimeoutRunner: ShellCommandRunning {
+    private(set) var command: ShellCommand?
+
+    func run(_ command: ShellCommand) async throws -> ShellCommandResult {
+        self.command = command
+        throw ShellCommandError.timedOut(executable: command.executable, timeout: command.timeout)
+    }
+}
+
+/// Cancel only the loader task, as a reader switching away from an EPUB would.
+private struct EPUBCancelledRunner: ShellCommandRunning {
+    func run(_ command: ShellCommand) async throws -> ShellCommandResult {
+        withUnsafeCurrentTask { $0?.cancel() }
+        throw CancellationError()
     }
 }
