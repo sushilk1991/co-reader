@@ -1,9 +1,14 @@
 import Foundation
 
 struct ClaudeCodeClient: ClaudeGenerating {
+    let locator: ClaudeCLILocator
     let commandRunner: ShellCommandRunning
 
-    init(commandRunner: ShellCommandRunning = ProcessCommandRunner()) {
+    init(
+        locator: ClaudeCLILocator = .shared,
+        commandRunner: ShellCommandRunning = ProcessCommandRunner()
+    ) {
+        self.locator = locator
         self.commandRunner = commandRunner
     }
 
@@ -12,11 +17,12 @@ struct ClaudeCodeClient: ClaudeGenerating {
 
     func generate(prompt: String) async throws -> String {
         // The prompt travels over stdin: argv is size-limited and visible in `ps`.
-        let result = try await ClaudeCLIProbe(commandRunner: commandRunner).runResolved(
+        let result = try await commandRunner.run(ShellCommand(
+            executable: try await locator.executablePath(),
             arguments: ["-p", "--output-format", "text", "--no-session-persistence"],
             standardInput: prompt,
             timeout: Self.generationTimeout
-        )
+        ))
 
         guard result.exitCode == 0 else {
             throw NSError(

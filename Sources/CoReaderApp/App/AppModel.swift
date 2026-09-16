@@ -65,6 +65,7 @@ final class AppModel {
     var autoSummaryError: String?
     var isRestoringReadingState = false
     var readingStateRestoreError: String?
+    var highlightLoadError: String?
     var missingLibraryFiles: [URL] = []
 
     /// Auto-summaries wait for the reader to settle on a page before spending a
@@ -195,6 +196,10 @@ final class AppModel {
             return readingStateRestoreError
         }
 
+        if let highlightLoadError {
+            return highlightLoadError
+        }
+
         guard !missingLibraryFiles.isEmpty else {
             return nil
         }
@@ -307,6 +312,7 @@ final class AppModel {
 
     func dismissSessionNotice() {
         readingStateRestoreError = nil
+        highlightLoadError = nil
         missingLibraryFiles = []
     }
 
@@ -895,6 +901,7 @@ final class AppModel {
 
         try? refreshSavedNotesForSelectedDocument()
         // Loading can await iCloud; obsolete document loads must not publish into the new selection.
+        highlightLoadError = nil
         highlightLoadTask?.cancel()
         highlightLoadTask = Task { [weak self] in
             do {
@@ -906,7 +913,7 @@ final class AppModel {
                     return
                 }
 
-                self.chatError = error.localizedDescription
+                self.highlightLoadError = error.localizedDescription
             }
         }
         startVisualExtraction(for: document)

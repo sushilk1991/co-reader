@@ -131,9 +131,11 @@ resolved below, each with a failing regression test first.
     embedding models are installed.
 11. `ClaudeCodeClient.generate` — the prompt goes on stdin; argv is
     `claude -p --output-format text --no-session-persistence`. The
-    `AIProviderKind` surface is unchanged. Generation reuses `ClaudeCLIProbe`'s
-    common-path checks and login-shell fallback, so a minimal GUI PATH works
-    wherever the availability probe succeeds. Missing installations report
+    `AIProviderKind` surface is unchanged. `ClaudeCLILocator` finds the binary
+    once per session (common install paths, then `zsh -l -c 'command -v claude'`)
+    and both the probe and generation spawn that path directly, so a minimal GUI
+    PATH works wherever the availability probe succeeds and login-shell dotfile
+    output never reaches an answer. Missing installations report
     "claude not found on PATH".
 12. `ReadingStateStore.load` and `save` (`coordinatedRead`, `coordinatedWrite`) — reads and writes go through
     `NSFileCoordinator`; a dataless iCloud placeholder triggers
@@ -146,8 +148,8 @@ resolved below, each with a failing regression test first.
     unchanged and remains an open question.
     `LiveDocumentHighlightStore` also reads through `NSFileCoordinator` on
     `BlockingWork`, including reads needed for edits. A dataless highlight
-    file requests download, reports that highlights are still downloading,
-    and rejects edits until the file is available. Writes are coordinated;
+    file requests download, reports that highlights are still downloading in
+    the session banner, and rejects edits until the file is available. Writes are coordinated;
     edits run serially so concurrent saves preserve both highlights.
     The reader discards loads completed after switching documents.
 13. `ReaderDocument.noteSourceIdentifier`, used by `ChatKnowledgeCapture` —

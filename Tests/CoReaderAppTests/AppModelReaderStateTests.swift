@@ -167,6 +167,30 @@ struct AppModelReaderStateTests {
         #expect(try highlightStore.loadHighlights(for: ReaderDocument(fileURL: documentURL)).count == 1)
     }
 
+    /// A highlight file that cannot be read is a session condition, like reading
+    /// state that is still downloading, so it belongs in the banner, not the Ask panel.
+    @Test
+    func highlightLoadFailureShowsAsSessionNotice() async throws {
+        let highlightStore = StubDocumentHighlightStore()
+        highlightStore.loadError = FailingHighlightLoad.stillDownloading
+        let appModel = AppModel(
+            documentAssistant: StubDocumentAssistant(result: "Unused"),
+            knowledgeCapture: StubKnowledgeCapture(),
+            noteStore: StubNoteStore(),
+            highlightStore: highlightStore
+        )
+
+        appModel.importDocument(from: URL(fileURLWithPath: "/tmp/Cloud Highlights.pdf"))
+        await waitUntil { appModel.sessionNotice != nil }
+
+        #expect(appModel.sessionNotice == FailingHighlightLoad.stillDownloading.localizedDescription)
+        #expect(appModel.chatError == nil)
+
+        appModel.dismissSessionNotice()
+
+        #expect(appModel.sessionNotice == nil)
+    }
+
     @Test
     func deleteRemovesHighlight() async throws {
         let noteStore = StubNoteStore()
@@ -675,12 +699,25 @@ private struct StubVisualExtractor: DocumentVisualExtracting {
     }
 }
 
+private enum FailingHighlightLoad: LocalizedError {
+    case stillDownloading
+
+    var errorDescription: String? {
+        "Highlights are still downloading from iCloud."
+    }
+}
+
 @MainActor
 private final class StubDocumentHighlightStore: DocumentHighlightStoring {
     private(set) var storedHighlights: [String: [PDFDocumentHighlight]] = [:]
+    var loadError: (any Error)?
 
     func loadHighlights(for document: ReaderDocument) throws -> [PDFDocumentHighlight] {
-        storedHighlights[document.fileURL.path] ?? []
+        if let loadError {
+            throw loadError
+        }
+
+        return storedHighlights[document.fileURL.path] ?? []
     }
 
     func upsertHighlight(_ highlight: PDFDocumentHighlight, for document: ReaderDocument) throws {
