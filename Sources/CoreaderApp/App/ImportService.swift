@@ -130,7 +130,10 @@ final class ImportService {
         case .epub, .mobi, .azw3:
             entry = await enrichReflowable(entry, sourceName: sourceName)
         case .article:
-            break
+            if let result = await BookProbe().inspect(entry.fileURL), !result.sections.isEmpty {
+                let store = app.textStore, book = entry.book, sections = result.sections
+                _ = try? await offMain { try store.save(sections, for: book) }
+            }
         }
 
         if entry.book.coverFile == nil {
@@ -223,8 +226,15 @@ final class ImportService {
     private func enrichReflowable(_ entry: BookEntry, sourceName: String) async -> BookEntry {
         let probe = BookProbe()
         self.probe = probe
-        guard let info = await probe.inspect(entry.fileURL) else { return entry }
+        guard let result = await probe.inspect(entry.fileURL) else { return entry }
         self.probe = nil
+        let info = result.info
+        // The text feeds whole-book chat, the agents and book-to-skill from the start,
+        // without the book having to be opened first.
+        if !result.sections.isEmpty {
+            let store = app.textStore, book = entry.book, sections = result.sections
+            _ = try? await offMain { try store.save(sections, for: book) }
+        }
         app.update(entry.id) { book in
             if !info.title.isEmpty, Self.isPlaceholder(book.title, sourceName: sourceName, entry: entry) { book.title = info.title }
             if book.authors.isEmpty { book.authors = info.authors }
@@ -318,33 +328,48 @@ extension NSImage {
     }
 }
 
-/// Reads title, authors and cover from an EPUB/MOBI by opening it in an unseen web reader.
+/// Reads title, authors, cover and the full text of an EPUB/MOBI/article by opening it in
+/// an unseen web reader.
 @MainActor
 final class BookProbe {
+    struct Result {
+        var info: WebReaderEvent.Opened
+        var sections: [BookTextStore.Section]
+    }
+
     private var controller: WebReaderController?
 
-    func inspect(_ file: URL) async -> WebReaderEvent.Opened? {
+    func inspect(_ file: URL) async -> Result? {
         let controller = WebReaderController()
         self.controller = controller
         defer { self.controller = nil }
         return await withCheckedContinuation { continuation in
             var finished = false
-            func finish(_ value: WebReaderEvent.Opened?) {
+            var info: WebReaderEvent.Opened?
+            var sections: [BookTextStore.Section] = []
+            func finish() {
                 guard !finished else { return }
                 finished = true
-                continuation.resume(returning: value)
+                continuation.resume(returning: info.map { Result(info: $0, sections: sections) })
             }
             controller.onEvent = { event in
                 switch event {
-                case .opened(let info): finish(info)
-                case .openFailed: finish(nil)
-                default: break
+                case .opened(let opened):
+                    info = opened
+                    controller.extractText()
+                case .textSection(let index, let title, let cfi, let fraction, let text):
+                    sections.append(.init(index: index, title: title, locator: Locator(cfi: cfi, fraction: fraction, label: title), text: text))
+                case .textDone, .openFailed:
+                    finish()
+                default:
+                    break
                 }
             }
             controller.open(file: file, lastCFI: nil, marks: [], settings: ReaderSettings().webPayload(theme: .paper))
             Task {
-                try? await Task.sleep(for: .seconds(25))
-                finish(nil)
+                // A very large book may not finish extracting in time; what there is is used.
+                try? await Task.sleep(for: .seconds(60))
+                finish()
             }
         }
     }

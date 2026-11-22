@@ -22,6 +22,7 @@ swift build && swift test          # core + CLI
 xcodegen generate --spec project.yml
 make build                         # the .app
 make build-and-run-background      # launch without taking focus
+scripts/dev_start.sh               # run off-screen and drive it: docs/driving-the-app.md
 ```
 
 Rerun `xcodegen` after adding or removing files under `Sources/CoreaderApp`.
@@ -43,7 +44,9 @@ Coreader/
     cover.jpg|png           cover (from the file, or generated)
     assets/                 images saved or snipped from the book
     chats/                  saved AI conversations, Markdown
+    skill/                  the book distilled into an agent skill, if built
   review.json               spaced-repetition state for the daily review
+  reading-log.json          minutes read per day (streak, weekly chart)
 ```
 
 Rules:
@@ -59,6 +62,14 @@ Rules:
   are how notes, agents and the CLI point back into a book. See `DeepLink`.
 
 ## Guardrails
+
+- Every write of `notes.md` or `book.json` goes through `WriteQueue` (ordered per book;
+  quitting waits for it). Annotation edits are applied to the copy in the file
+  (`NotesStore.update`), never by writing back a copy loaded earlier.
+- Book content is untrusted: the web reader's CSP allows only bundled scripts, only the
+  main frame may message the app, and links from books open only as http(s)/mailto.
+- Agents get read-only access to the book and notes. The one job that writes
+  (book-to-skill) works in a staging folder, never in the book's folder.
 
 - Swift 6 language mode, strict concurrency. Nothing blocking on the main actor.
 - Child processes always carry a timeout and are killed when their task is cancelled.

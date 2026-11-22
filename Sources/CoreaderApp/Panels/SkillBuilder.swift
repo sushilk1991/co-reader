@@ -30,12 +30,26 @@ final class SkillJob: Identifiable {
 
     func start(app: AppModel) {
         guard let agent = app.activeAgent else { phase = .failed("No AI agent was found on this Mac."); return }
-        guard app.textStore.hasText(for: self.entry.id) else {
-            phase = .failed("Open this book once first, so its text is available to the agent.")
-            return
-        }
         phase = .working
         activity = "Reading the book…"
+        Task { await run(agent: agent, app: app) }
+    }
+
+    private func run(agent: DetectedAgent, app: AppModel) async {
+        // Books added before text was extracted at import get it now.
+        if !app.textStore.hasText(for: self.entry.id) {
+            let store = app.textStore, book = self.entry.book, file = self.entry.fileURL
+            if book.format == .pdf {
+                _ = try? await offMain { try store.save(try store.extractPDF(at: file, book: book), for: book) }
+            } else if let result = await BookProbe().inspect(file), !result.sections.isEmpty {
+                let sections = result.sections
+                _ = try? await offMain { try store.save(sections, for: book) }
+            }
+        }
+        guard app.textStore.hasText(for: self.entry.id) else {
+            phase = .failed("The text of this book could not be read.")
+            return
+        }
         let text = app.textStore.folder(for: self.entry.id)
         let book = self.entry.book
         try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
