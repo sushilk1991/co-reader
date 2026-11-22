@@ -100,6 +100,73 @@ enum DebugHooks {
         }
     }
 
+    // MARK: Synthetic input
+
+    /// The app's main window, whose top-left corner is the origin for input commands.
+    private static var mainWindow: NSWindow? {
+        NSApp.windows.filter { $0.isVisible && $0.styleMask.contains(.titled) && $0.sheetParent == nil }
+            .max(by: { $0.frame.width < $1.frame.width })
+    }
+
+    /// Topmost window (sheet, popover or main) under a point given in main-window
+    /// coordinates with a top-left origin, and the point in that window's own coordinates.
+    private static func target(_ x: Double, _ y: Double) -> (NSWindow, NSPoint)? {
+        guard let main = mainWindow else { return nil }
+        let screen = NSPoint(x: main.frame.minX + x, y: main.frame.maxY - y)
+        let candidates = NSApp.windows.filter { $0.isVisible && $0.frame.contains(screen) }
+            .sorted { ($0 === main ? 1 : 0, $0.orderedIndex) < ($1 === main ? 1 : 0, $1.orderedIndex) }
+        guard let window = candidates.first else { return nil }
+        return (window, NSPoint(x: screen.x - window.frame.minX, y: screen.y - window.frame.minY))
+    }
+
+    private static func mouse(_ type: NSEvent.EventType, _ x: Double, _ y: Double, clicks: Int = 1) {
+        guard let (window, point) = target(x, y),
+              let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                             windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1) else { return }
+        window.sendEvent(event)
+    }
+
+    /// `click x y`, `dclick x y`, `rclick x y`, `drag x1 y1 x2 y2`, `move x y`, `type text`,
+    /// `key return|escape|tab|left|right|up|down|delete|space`. Returns false for other commands.
+    private static func input(_ line: String) -> Bool {
+        let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+        let n = (parts.count > 1 ? parts[1] : "").split(separator: " ").compactMap { Double($0) }
+        switch parts[0] {
+        case "click" where n.count == 2:
+            mouse(.mouseMoved, n[0], n[1]); mouse(.leftMouseDown, n[0], n[1]); mouse(.leftMouseUp, n[0], n[1])
+        case "dclick" where n.count == 2:
+            mouse(.leftMouseDown, n[0], n[1]); mouse(.leftMouseUp, n[0], n[1])
+            mouse(.leftMouseDown, n[0], n[1], clicks: 2); mouse(.leftMouseUp, n[0], n[1], clicks: 2)
+        case "rclick" where n.count == 2:
+            mouse(.rightMouseDown, n[0], n[1]); mouse(.rightMouseUp, n[0], n[1])
+        case "move" where n.count == 2:
+            mouse(.mouseMoved, n[0], n[1])
+        case "drag" where n.count == 4:
+            mouse(.leftMouseDown, n[0], n[1])
+            for i in 1...8 {
+                let t = Double(i) / 8
+                mouse(.leftMouseDragged, n[0] + (n[2] - n[0]) * t, n[1] + (n[3] - n[1]) * t)
+            }
+            mouse(.leftMouseUp, n[2], n[3])
+        case "type" where parts.count > 1:
+            let window = NSApp.windows.first { $0.isVisible && $0.firstResponder is NSTextView } ?? mainWindow
+            (window?.firstResponder as? NSTextView)?.insertText(parts[1], replacementRange: NSRange(location: NSNotFound, length: 0))
+        case "key" where parts.count > 1:
+            let codes: [String: (UInt16, String)] = ["return": (36, "\r"), "escape": (53, "\u{1b}"), "tab": (48, "\t"), "left": (123, ""), "right": (124, ""),
+                                                     "up": (126, ""), "down": (125, ""), "delete": (51, "\u{7f}"), "space": (49, " ")]
+            guard let (code, chars) = codes[parts[1]] else { return true }
+            let window = NSApp.windows.filter { $0.isVisible }.min(by: { $0.orderedIndex < $1.orderedIndex }) ?? mainWindow
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                windowNumber: window?.windowNumber ?? 0, context: nil, characters: chars,
+                                                charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) { window?.sendEvent(event) }
+            }
+        default:
+            return false
+        }
+        return true
+    }
+
     static func install(commands handler: @escaping (String) -> Void) {
         commandHandler = handler
         if isOffscreen {
@@ -118,7 +185,7 @@ enum DebugHooks {
             }
         }
         guard let path = environment["COREADER_COMMANDS"] else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
+        let poll = Timer(timeInterval: 0.3, repeats: true) { _ in
             MainActor.assumeIsolated {
                 guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return }
                 let lines = text.split(separator: "\n").map(String.init)
@@ -126,9 +193,13 @@ enum DebugHooks {
                     let line = lines[offset]
                     offset += 1
                     log("command: \(line)")
-                    if line.hasPrefix("shot ") { snapshot(to: String(line.dropFirst(5))) } else { commandHandler?(line) }
+                    if line.hasPrefix("shot ") { snapshot(to: String(line.dropFirst(5))) }
+                    else if !input(line) { commandHandler?(line) }
                 }
             }
         }
+        // Common modes, so commands keep flowing while a sheet or menu is up.
+        RunLoop.main.add(poll, forMode: .common)
+        timer = poll
     }
 }

@@ -139,7 +139,9 @@ struct LibraryLocationRow: View {
         panel.directoryURL = app.library.root.deletingLastPathComponent()
         panel.message = "Choose the folder that holds your Coreader library. Books already in the current folder stay there."
         panel.prompt = "Use This Folder"
-        if panel.runModal() == .OK, let url = panel.url { Task { await app.useLibrary(at: url) } }
+        panel.begin { response in
+            if response == .OK, let url = panel.url { Task { await app.useLibrary(at: url) } }
+        }
     }
 }
 

@@ -37,7 +37,10 @@ final class ArticleFetcher: NSObject, WKNavigationDelegate {
               (dict["length"] as? Int ?? 0) > 400 else { throw Failure.nothingReadable }
         func s(_ k: String) -> String? { (dict[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         let date = s("published").flatMap { ISO8601DateFormatter().date(from: $0) }
-        return ArticleContent(title: s("title") ?? url.host ?? "Article", byline: s("byline"), siteName: s("site"),
+        let host = (webView.url ?? url).host?.replacingOccurrences(of: "www.", with: "")
+        // A site name that only repeats the address adds nothing next to the source link.
+        let site = s("site").flatMap { $0 == host ? nil : $0 }
+        return ArticleContent(title: s("title") ?? url.host ?? "Article", byline: s("byline"), siteName: site,
                               sourceURL: webView.url ?? url, publishedAt: date, contentHTML: html, excerpt: s("excerpt"))
     }
 
@@ -86,11 +89,31 @@ final class ArticleFetcher: NSObject, WKNavigationDelegate {
         if (e.tagName === 'IMG') { const s = e.currentSrc || e.src; if (s) e.setAttribute('src', new URL(s, location.href).href); e.removeAttribute('srcset'); e.removeAttribute('sizes'); e.removeAttribute('loading') }
         if (e.tagName === 'A' && e.getAttribute('href')) e.setAttribute('href', new URL(e.getAttribute('href'), location.href).href)
       })
+      // Old pages lay text out with tables and <font>; keep the words, drop the scaffolding.
+      // A table stays only when it looks like data: several rows of several short cells.
+      for (const table of [...copy.querySelectorAll('table')].reverse()) {
+        const rows = [...table.querySelectorAll('tr')]
+        const cells = [...table.querySelectorAll('td, th')]
+        const isData = rows.length >= 2 && cells.length >= rows.length * 2 && cells.every(c => c.textContent.trim().length < 200)
+        if (isData) continue
+        const div = document.createElement('div')
+        for (const cell of cells.length ? cells : [table]) { const part = document.createElement('div'); part.append(...cell.childNodes); div.append(part) }
+        table.replaceWith(div)
+      }
+      copy.querySelectorAll('font, center, span').forEach(e => e.replaceWith(...e.childNodes))
+      copy.querySelectorAll('img').forEach(e => {
+        const w = parseInt(e.getAttribute('width') || '0'), h = parseInt(e.getAttribute('height') || '0')
+        if ((w && w < 24) || (h && h < 24) || /spacer|trans_?1x1|pixel/i.test(e.getAttribute('src') || '')) e.remove()
+      })
+      copy.querySelectorAll('div, p').forEach(e => { if (!e.textContent.trim() && !e.querySelector('img, picture, video')) e.remove() })
       const h1 = document.querySelector('article h1, main h1, h1')
       const title = meta('og:title', 'twitter:title') || h1?.textContent.trim() || document.title
       copy.querySelectorAll('h1').forEach(e => { if (e.textContent.trim() === title.trim()) e.remove() })
+      let html = copy.innerHTML
+      // Pages that separate paragraphs with double line breaks get real paragraphs.
+      if (copy.querySelectorAll('p').length < 3) html = '<p>' + html.replace(/(<br\\s*\\/?>\\s*){2,}/gi, '</p><p>') + '</p>'
       return {
-        html: copy.innerHTML, length: copy.textContent.trim().length, title,
+        html, length: copy.textContent.trim().length, title,
         byline: meta('author', 'article:author', 'parsely-author') || document.querySelector('[rel="author"], .author, .byline')?.textContent.trim().replace(/^by\\s+/i, '') || '',
         site: meta('og:site_name') || location.hostname.replace(/^www\\./, ''),
         excerpt: meta('og:description', 'description'),

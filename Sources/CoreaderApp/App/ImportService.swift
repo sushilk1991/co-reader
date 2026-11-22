@@ -21,7 +21,15 @@ final class ImportService {
         panel.allowedContentTypes = Self.fileTypes
         panel.message = "Add books, papers and documents to your library"
         panel.prompt = "Add"
-        if panel.runModal() == .OK { importFiles(panel.urls, openFirst: panel.urls.count == 1) }
+        let done: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            if response == .OK { self?.importFiles(panel.urls, openFirst: panel.urls.count == 1) }
+        }
+        // A sheet on the window, not an app-wide modal dialog.
+        if let window = NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.styleMask.contains(.titled) }) {
+            panel.beginSheetModal(for: window, completionHandler: done)
+        } else {
+            panel.begin(completionHandler: done)
+        }
     }
 
     func importFiles(_ urls: [URL], openFirst: Bool = false) {

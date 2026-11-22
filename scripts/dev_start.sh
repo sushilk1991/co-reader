@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
-# Starts the Debug app off-screen against the scratch library in build/dev.
+# Starts the Debug app off-screen against a scratch library next to the state directory.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-exec "$ROOT/scripts/dev_run.sh" "COREADER_LIBRARY=$ROOT/build/dev/library" "COREADER_CACHES=$ROOT/build/dev/caches" "COREADER_WINDOW_SIZE=${SIZE:-1320x860}" "$@"
+STATE="${COREADER_DEV_STATE:-$ROOT/build/dev}"
+exec "$ROOT/scripts/dev_run.sh" "COREADER_LIBRARY=$STATE/library" "COREADER_CACHES=$STATE/caches" "COREADER_WINDOW_SIZE=${SIZE:-1320x860}" "$@"

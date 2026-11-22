@@ -152,13 +152,19 @@ final class ReaderModel {
         if let web {
             web.onEvent = { [weak self] in self?.handle($0) }
             let marks = annotations.compactMap(mark(for:))
-            web.open(file: entry.fileURL, lastCFI: entry.book.location?.cfi, marks: marks,
-                     settings: settings.webPayload(theme: app.theme))
+            web.open(file: entry.fileURL, lastCFI: entry.book.location?.cfi, marks: marks, settings: webSettings)
         } else if let pdf {
             pdf.onEvent = { [weak self] in self?.handle($0) }
             pdf.open(file: entry.fileURL, page: entry.book.location?.page ?? 0, annotations: annotations,
                      settings: settings, theme: app.theme)
         }
+    }
+
+    /// Saved articles always take the reading typeface: their own styling is the web's.
+    private var webSettings: [String: Any] {
+        var payload = app.settings.webPayload(theme: app.theme)
+        if entry.book.format == .article { payload["overrideFonts"] = true }
+        return payload
     }
 
     func close() {
@@ -169,7 +175,7 @@ final class ReaderModel {
     }
 
     func settingsChanged() {
-        web?.apply(settings: app.settings.webPayload(theme: app.theme))
+        web?.apply(settings: webSettings)
         pdf?.apply(settings: app.settings, theme: app.theme)
     }
 
