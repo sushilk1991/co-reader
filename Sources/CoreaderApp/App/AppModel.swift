@@ -30,6 +30,8 @@ final class AppModel {
     var overlay: ShelfOverlay?
     var reader: ReaderModel?
     var notice: Notice?
+    var confirmDelete: BookEntry?
+    var skillJob: SkillJob?
     var isLoaded = false
 
     var settings = ReaderSettings.load() { didSet { settings.save() } }
@@ -184,6 +186,11 @@ final class AppModel {
         }
     }
 
+    func makeSkill(from id: String) {
+        guard let entry = entry(id) else { return }
+        skillJob = SkillJob(entry: entry)
+    }
+
     func revealInFinder(_ id: String) {
         guard let entry = entry(id) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([entry.notesURLIfPresent ?? entry.fileURL])
@@ -241,5 +248,46 @@ final class AppModel {
 extension BookEntry {
     var notesURLIfPresent: URL? {
         FileManager.default.fileExists(atPath: notesURL.path) ? notesURL : nil
+    }
+}
+
+// MARK: - Unattended driving (development)
+
+extension AppModel {
+    /// One-line commands from `DebugHooks`; see `scripts/dev_run.sh`.
+    func debug(_ line: String) {
+        let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+        let arg = parts.count > 1 ? parts[1] : ""
+        switch parts.first ?? "" {
+        case "import": importer.importFiles(arg.split(separator: "|").map { URL(fileURLWithPath: String($0)) })
+        case "link": importer.importLink(arg)
+        case "open":
+            if let entry = books.first(where: { $0.id == arg || $0.book.title.localizedCaseInsensitiveContains(arg) }) { open(entry.id) }
+        case "close": closeReader()
+        case "next": reader?.nextPage()
+        case "prev": reader?.previousPage()
+        case "goto": if let f = Double(arg) { reader?.go(toFraction: f) }
+        case "panel": reader?.panel = ReaderPanel(rawValue: arg)
+        case "overlay": overlay = ShelfOverlay(rawValue: arg)
+        case "theme": if let t = ReaderTheme(rawValue: arg) { settings.followsSystemAppearance = false; settings.theme = t }
+        case "turn": if let t = PageTurn(rawValue: arg) { settings.pageTurn = t }
+        case "focus": reader?.toggleFocus()
+        case "snip": reader?.isSnipping.toggle()
+        case "contents": reader?.showsContents.toggle()
+        case "appearance": reader?.showsAppearance.toggle()
+        case "select": reader?.debugSelect(arg)
+        case "highlight": reader?.highlight(HighlightColor(rawValue: arg) ?? .yellow)
+        case "glance": reader?.glance(Glance.Kind(rawValue: arg) ?? .explain)
+        case "ask": reader?.chat.send(arg)
+        case "asksel": reader?.askAboutSelection()
+        case "rate": if let id = reader?.entry.id ?? books.first?.id { setRating(Int(arg), for: id) }
+        case "status":
+            let bits = arg.split(separator: "=", maxSplits: 1).map(String.init)
+            if bits.count == 2, let e = books.first(where: { $0.book.title.localizedCaseInsensitiveContains(bits[0]) }), let s = ReadingStatus(rawValue: bits[1]) { setStatus(s, for: e.id) }
+        case "onboard": hasOnboarded = arg != "reset"
+        case "dump":
+            DebugHooks.log("books=\(books.count) route=\(route) agents=\(agents.map(\.kind.rawValue)) reader.loading=\(String(describing: reader?.isLoading)) annotations=\(reader?.annotations.count ?? -1) fraction=\(reader?.fraction ?? -1) chat=\(reader?.chat.messages.last?.text.prefix(300) ?? "")")
+        default: DebugHooks.log("unknown command: \(line)")
+        }
     }
 }

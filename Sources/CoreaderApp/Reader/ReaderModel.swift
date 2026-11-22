@@ -1,6 +1,7 @@
 import AppKit
 import CoreaderKit
 import SwiftUI
+import WebKit
 
 /// The passage currently selected in the book, whatever the format.
 struct ReaderSelection: Equatable {
@@ -82,14 +83,14 @@ final class ReaderModel {
     var isSearching = false
 
     /// Drives the page-turn animation: an image of the page being left.
-    var turn: PageTurn?
+    var turn: TurningPage?
 
     struct ActiveAnnotation: Identifiable, Equatable {
         var id: String
         var rect: CGRect
     }
 
-    struct PageTurn: Identifiable {
+    struct TurningPage: Identifiable {
         let id = UUID()
         var image: NSImage
         var forward: Bool
@@ -317,7 +318,7 @@ final class ReaderModel {
         web.webView.takeSnapshot(with: nil) { [weak self] image, _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if let image { self.turn = PageTurn(image: image, forward: forward) }
+                if let image { self.turn = TurningPage(image: image, forward: forward) }
                 forward ? web.next() : web.previous()
             }
         }
@@ -697,4 +698,22 @@ final class NotesFocus {
     static let shared = NotesFocus()
     var requested: String?
     func request(_ id: String) { requested = id }
+}
+
+extension ReaderModel {
+    /// Development: select the first occurrence of `text` on the visible page.
+    func debugSelect(_ text: String) {
+        if let web {
+            let js = """
+            (() => { for (const {doc} of window.reader.view.renderer.getContents()) {
+              const w = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT); let n
+              while ((n = w.nextNode())) { const i = n.data.indexOf(\(String(data: try! JSONSerialization.data(withJSONObject: text, options: .fragmentsAllowed), encoding: .utf8)!))
+                if (i >= 0) { const r = doc.createRange(); r.setStart(n, i); r.setEnd(n, Math.min(n.data.length, i + \(text.count)));
+                  const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); return true } } } return false })()
+            """
+            web.webView.evaluateJavaScript(js) { _, _ in }
+        } else if let pdf, let found = pdf.view.document?.findString(text, withOptions: .caseInsensitive).first {
+            pdf.view.setCurrentSelection(found, animate: false)
+        }
+    }
 }

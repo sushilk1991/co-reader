@@ -343,7 +343,7 @@ private struct EdgeArrows: View {
 
 /// The page being left, lifted off the spine and turned away.
 private struct PageTurnLeaf: View {
-    let turn: ReaderModel.PageTurn
+    let turn: ReaderModel.TurningPage
     let size: CGSize
     let done: () -> Void
     @State private var progress: Double = 0
