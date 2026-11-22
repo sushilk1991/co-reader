@@ -220,7 +220,11 @@ struct GraphView: View {
 
     private func build() async {
         let library = app.library, notes = app.notes
-        typealias Built = (graph: NoteGraph, positions: [String: CGPoint], cards: [String: ReviewModel.Card])
+        struct Built: Sendable {
+            var graph: NoteGraph
+            var positions: [String: CGPoint]
+            var cards: [String: ReviewModel.Card]
+        }
         let built: Built? = try? await background {
             let all = try notes.all(in: library)
             var byBook: [String: (BookEntry, [Annotation])] = [:]
@@ -232,7 +236,7 @@ struct GraphView: View {
             let inputs = byBook.values.map { GraphInput(book: $0.0.book, annotations: $0.1) }
             let graph = GraphBuilder().build(from: inputs)
             let layout = GraphLayout.layout(graph).mapValues { CGPoint(x: $0.x, y: $0.y) }
-            return (graph, layout, cards)
+            return Built(graph: graph, positions: layout, cards: cards)
         }
         if let built {
             graph = built.graph

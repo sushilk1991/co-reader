@@ -41,7 +41,7 @@ targets:
         product: CoreaderKit
       # The `coreader` command rides inside the app (Contents/Helpers) and is linked
       # into ~/.local/bin from Settings.
-      - target: coreader
+      - target: CoreaderCLI
         embed: false
         copy:
           destination: wrapper
@@ -81,7 +81,7 @@ targets:
             LSHandlerRank: Alternate
             CFBundleTypeExtensions: [mobi, azw3, azw, prc]
 
-  coreader:
+  CoreaderCLI:
     type: tool
     platform: macOS
     deploymentTarget: "15.0"

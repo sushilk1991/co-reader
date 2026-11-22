@@ -8,7 +8,7 @@ agent CLIs already on the machine (Claude Code, Codex, Antigravity).
 
 | Path | What |
 | --- | --- |
-| `Sources/CoreaderKit` | Platform-neutral core (models, library, notes, agents, papers, covers, review, graph). Foundation only: no AppKit, UIKit or SwiftUI, so iOS can reuse it. |
+| `Sources/CoreaderKit` | Platform-neutral core (models, library, notes, agents, papers, covers, review, graph). Foundation plus CryptoKit, NaturalLanguage and PDFKit: no AppKit, UIKit or SwiftUI, so iOS can reuse it. |
 | `Sources/coreader-cli` | `coreader` command for people and agents to query the library and notes. |
 | `Sources/CoreaderApp` | The macOS SwiftUI app. |
 | `Sources/CoreaderApp/Web` | The web reader (vendored foliate-js + `bridge.js`) shown in a `WKWebView` for every format except PDF. |

@@ -492,7 +492,7 @@ private struct Today: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Glance()
+                TodayStats()
                     .frame(width: 250)
             }
             .frame(height: 264)
@@ -505,7 +505,7 @@ private struct Today: View {
                         .foregroundStyle(palette.ink)
                 }
                 Spacer()
-                Glance().frame(width: 250)
+                TodayStats().frame(width: 250)
             }
         }
     }
@@ -519,7 +519,7 @@ private struct Today: View {
 }
 
 /// Today's reading: minutes, streak, the week, and the review waiting.
-private struct Glance: View {
+private struct TodayStats: View {
     @Environment(AppModel.self) private var app
     @Environment(\.palette) private var palette
 

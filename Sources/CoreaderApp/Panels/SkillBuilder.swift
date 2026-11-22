@@ -20,21 +20,21 @@ final class SkillJob: Identifiable {
 
     init(entry: BookEntry) { self.entry = entry }
 
-    var slug: String { entry.folder.lastPathComponent }
-    var outputFolder: URL { entry.folder.appendingPathComponent("skill", isDirectory: true) }
+    var slug: String { self.entry.folder.lastPathComponent }
+    var outputFolder: URL { self.entry.folder.appendingPathComponent("skill", isDirectory: true) }
 
     func start(app: AppModel) {
         guard let agent = app.activeAgent else { phase = .failed("No AI agent was found on this Mac."); return }
-        guard app.textStore.hasText(for: entry.id) else {
+        guard app.textStore.hasText(for: self.entry.id) else {
             phase = .failed("Open this book once first, so its text is available to the agent.")
             return
         }
         phase = .working
         activity = "Reading the book…"
-        let text = app.textStore.folder(for: entry.id)
-        let book = entry.book
+        let text = app.textStore.folder(for: self.entry.id)
+        let book = self.entry.book
         let config = AgentSessionConfig(
-            workingDirectory: entry.folder, additionalDirectories: [text],
+            workingDirectory: self.entry.folder, additionalDirectories: [text],
             systemPrompt: "You are building an agent skill from a book. Write files only inside the `skill/` folder of the working directory.",
             access: .canEditNotes, model: nil)
         let session = AgentSession(agent: agent, config: config)

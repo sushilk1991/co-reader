@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class ReviewModel {
-    struct Card: Identifiable, Equatable {
+    struct Card: Identifiable, Equatable, Sendable {
         var entry: BookEntry
         var annotation: Annotation
         var id: String { annotation.id }
@@ -27,10 +27,14 @@ final class ReviewModel {
     func reload(app: AppModel) {
         let library = app.library, notes = app.notes, root = libraryRoot
         Task {
-            typealias Loaded = (pairs: [Card], state: ReviewState, log: ReadingLog)
+            struct Loaded: Sendable {
+                var pairs: [Card]
+                var state: ReviewState
+                var log: ReadingLog
+            }
             let loaded: Loaded? = try? await background {
                 let pairs = try notes.all(in: library).map { Card(entry: $0.entry, annotation: $0.annotation) }
-                return (pairs, ReviewStore(libraryRoot: root).load(), ReadingLogStore(libraryRoot: root).load())
+                return Loaded(pairs: pairs, state: ReviewStore(libraryRoot: root).load(), log: ReadingLogStore(libraryRoot: root).load())
             }
             guard let loaded else { return }
             all = loaded.pairs

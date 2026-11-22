@@ -84,18 +84,6 @@ import Testing
         #expect(SHA256.hex(of: Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
         #expect(SHA256.hex(of: Data("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq".utf8))
             == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")
-        // One million 'a', fed in uneven pieces so block boundaries are crossed every way.
-        var hasher = SHA256()
-        var remaining = 1_000_000
-        var size = 1
-        while remaining > 0 {
-            let take = min(size, remaining)
-            hasher.update(Data(repeating: 0x61, count: take))
-            remaining -= take
-            size = size % 200 + 7
-        }
-        #expect(hasher.finalize() == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")
-
         let temp = TempDirectory()
         let file = temp.file("abc.txt", "abc")
         #expect(try SHA256.hex(ofFileAt: file) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")

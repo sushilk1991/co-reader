@@ -32,8 +32,7 @@ struct ChatPanel: View {
     // MARK: Header
 
     private var header: some View {
-        @Bindable var app = app
-        return HStack(spacing: 8) {
+        HStack(spacing: 8) {
             Menu {
                 if app.agents.isEmpty {
                     Text(app.agentsChecked ? "No agent found on this Mac" : "Looking for agents…")
