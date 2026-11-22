@@ -43,13 +43,21 @@ targets:
       # into ~/.local/bin from Settings.
       - target: CoreaderCLI
         embed: false
-        copy:
-          destination: wrapper
-          subpath: Contents/Helpers
+        link: false
       - sdk: PDFKit.framework
       - sdk: WebKit.framework
+    postBuildScripts:
+      - name: Embed coreader command
+        script: |
+          mkdir -p "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          cp -f "${BUILT_PRODUCTS_DIR}/coreader" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers/coreader"
+        inputFiles:
+          - ${BUILT_PRODUCTS_DIR}/coreader
+        outputFiles:
+          - ${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers/coreader
     settings:
       base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.sushil.coreader
         PRODUCT_NAME: Coreader
         PRODUCT_MODULE_NAME: CoreaderApp

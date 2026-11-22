@@ -80,8 +80,7 @@ final class PDFReaderController: NSObject {
 
     func apply(settings: ReaderSettings, theme: ReaderTheme) {
         self.settings = settings
-        let scrolls = settings.pageTurn == .scroll
-        view.displayMode = scrolls ? .singlePageContinuous : (settings.twoPages ? .twoUp : .singlePage)
+        applyLayout()
         view.displaysAsBook = false
         view.displayDirection = .vertical
         view.autoScales = true
@@ -108,6 +107,25 @@ final class PDFReaderController: NSObject {
             "inputBiasVector": CIVector(x: from.r, y: from.g, z: from.b, w: 0),
         ]) { filters.append(matrix) }
         view.contentFilters = filters
+    }
+
+    /// Two pages only when each would still be comfortably readable.
+    private var availableWidth: CGFloat = 1200
+
+    func setAvailableWidth(_ width: CGFloat) {
+        guard abs(width - availableWidth) > 1 else { return }
+        availableWidth = width
+        applyLayout()
+    }
+
+    private func applyLayout() {
+        let scrolls = settings.pageTurn == .scroll
+        let mode: PDFDisplayMode = scrolls ? .singlePageContinuous : (settings.twoPages && availableWidth >= 1040 ? .twoUp : .singlePage)
+        guard view.displayMode != mode else { return }
+        let page = view.currentPage
+        view.displayMode = mode
+        view.autoScales = true
+        if let page { view.go(to: page) }
     }
 
     // MARK: Navigation

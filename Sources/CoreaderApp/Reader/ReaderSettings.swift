@@ -93,3 +93,15 @@ struct ReaderSettings: Codable, Equatable {
         ]
     }
 }
+
+extension Book {
+    /// Author line that stays short on the shelf: "A. Author", "A and B", or "A et al.".
+    var shortAuthors: String {
+        switch authors.count {
+        case 0: ""
+        case 1: authors[0]
+        case 2: authors.joined(separator: " and ")
+        default: "\(authors[0]) et al."
+        }
+    }
+}

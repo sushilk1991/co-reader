@@ -355,7 +355,7 @@ private struct BookCell: View {
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
             if !book.authorLine.isEmpty {
-                Text(book.authorLine)
+                Text(book.shortAuthors)
                     .font(Typo.ui(11.5))
                     .foregroundStyle(palette.secondary)
                     .lineLimit(1)
@@ -450,7 +450,7 @@ private struct Today: View {
                         .lineLimit(2)
                         .padding(.top, 10)
                     if !lead.book.authorLine.isEmpty {
-                        Text(lead.book.authorLine)
+                        Text(lead.book.shortAuthors)
                             .font(Typo.serif(16, italic: true))
                             .foregroundStyle(palette.secondary)
                             .padding(.top, 4)

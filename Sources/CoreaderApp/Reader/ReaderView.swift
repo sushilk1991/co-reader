@@ -211,6 +211,7 @@ private struct ReadingArea: View {
                 } else if let pdf = reader.pdf {
                     PDFReaderView(controller: pdf)
                         .opacity(reader.isLoading ? 0 : 1)
+                        .onChange(of: geo.size.width, initial: true) { pdf.setAvailableWidth(geo.size.width) }
                 }
 
                 if let turn = reader.turn {

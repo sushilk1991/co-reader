@@ -69,7 +69,7 @@ struct ConnectionsList: View {
         switch mastisk {
         case .none: "Checking…"
         case .notInstalled: "Not on this Mac. Coreader works on its own; your notes stay plain Markdown either way."
-        case .needsConnector: "Mastisk is here but needs the Coreader connector (see integrations/mastisk). Until then nothing is shared."
+        case .needsConnector: "This version of Mastisk cannot read Coreader notes yet. Update Mastisk with the Coreader connector, then connect here."
         case .disconnected: "Mastisk can index your reading notes where they are. Nothing is copied, so there is one version of every note."
         case .connected(let books): "Connected. Mastisk reads \(books) book\(books == 1 ? "" : "s") of notes in place."
         case .remote: "Mastisk runs on another machine here, so it cannot read this library."
@@ -169,12 +169,13 @@ struct SettingsView: View {
                     Text("Covers").labelStyle(palette).padding(.top, 14)
                     Toggle(isOn: $app.generatesCovers) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Design covers for papers and plain PDFs").font(Typo.ui(13.5, weight: .semibold)).foregroundStyle(palette.ink)
+                            Text("Design covers for papers and plain PDFs").frame(maxWidth: .infinity, alignment: .leading).font(Typo.ui(13.5, weight: .semibold)).foregroundStyle(palette.ink)
                             Text("Uses your agent's image generation. A drawn cover is used until it arrives, or when this is off.")
                                 .font(Typo.ui(12)).foregroundStyle(palette.secondary)
                         }
                     }
                     .toggleStyle(.switch)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
                     .background(palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.rule, lineWidth: 0.5))

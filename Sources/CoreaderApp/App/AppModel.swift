@@ -273,6 +273,11 @@ extension AppModel {
         case "turn": if let t = PageTurn(rawValue: arg) { settings.pageTurn = t }
         case "focus": reader?.toggleFocus()
         case "snip": reader?.isSnipping.toggle()
+        case "sniprect":
+            let n = arg.split(separator: " ").compactMap { Double($0) }
+            if n.count == 4 { reader?.snip(CGRect(x: n[0], y: n[1], width: n[2], height: n[3]), copyToClipboard: false) }
+        case "search": reader?.searchQuery = arg; reader?.showsSearch = true; reader?.runSearch()
+        case "tab": DebugHooks.log("tab is view state; use the UI")
         case "contents": reader?.showsContents.toggle()
         case "appearance": reader?.showsAppearance.toggle()
         case "select": reader?.debugSelect(arg)
