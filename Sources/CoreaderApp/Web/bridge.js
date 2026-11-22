@@ -232,11 +232,26 @@ class Reader {
             post(type, {
                 dataURL, caption, point,
                 cfi: this.view.getCFI(index, range),
-                fraction: this.view.lastLocation?.fraction ?? 0,
+                fraction: this.#fractionOf(doc, index, range),
                 chapter: this.view.lastLocation?.tocItem?.label ?? '',
                 rect: toPageRect(doc, el.getBoundingClientRect()),
             })
         } catch (e) { post('log', { level: 'warn', message: 'image: ' + e }) }
+    }
+
+    // Position of a range in the whole book, finer than the page it is on, so notes made
+    // on one page still sort in reading order.
+    #fractionOf(doc, index, range) {
+        const fractions = this.view.getSectionFractions?.() ?? []
+        const start = fractions[index], end = fractions[index + 1]
+        if (start === undefined || end === undefined) return this.view.lastLocation?.fraction ?? 0
+        try {
+            const before = doc.createRange()
+            before.setStart(doc.body, 0)
+            before.setEnd(range.startContainer, range.startOffset)
+            const total = doc.body.textContent.length || 1
+            return start + (end - start) * Math.min(1, before.toString().length / total)
+        } catch { return this.view.lastLocation?.fraction ?? start }
     }
 
     #reportSelection(doc, index) {
@@ -257,7 +272,7 @@ class Reader {
             cfi: this.view.getCFI(index, range),
             context: (block?.textContent ?? '').trim().slice(0, 2400),
             chapter: this.view.lastLocation?.tocItem?.label ?? '',
-            fraction: this.view.lastLocation?.fraction ?? 0,
+            fraction: this.#fractionOf(doc, index, range),
             rect: toPageRect(doc, bounds),
             firstRect: toPageRect(doc, first),
         })

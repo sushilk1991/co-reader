@@ -44,12 +44,13 @@ public enum ProceduralCover {
         out += "</g>\n"
 
         let fonts = "'Iowan Old Style', 'Palatino Linotype', Palatino, 'Hoefler Text', Georgia, 'Times New Roman', serif"
-        out += "<text x=\"\(n(margin))\" y=\"\(n(titleTop + title.size * 0.82))\" font-family=\"\(fonts)\" "
-            + "font-size=\"\(n(title.size))\" letter-spacing=\"\(n(-title.size * 0.012))\" fill=\"\(palette.primary)\">"
+        // One <text> per line with an absolute position: some renderers (AppKit's among
+        // them) ignore `dy` on <tspan> and would set every line on top of the first.
         for (index, line) in title.lines.enumerated() {
-            out += "<tspan x=\"\(n(margin))\" dy=\"\(index == 0 ? "0" : n(title.lineHeight))\">\(escape(line))</tspan>"
+            let y = titleTop + title.size * 0.82 + Double(index) * title.lineHeight
+            out += "<text x=\"\(n(margin))\" y=\"\(n(y))\" font-family=\"\(fonts)\" "
+                + "font-size=\"\(n(title.size))\" letter-spacing=\"\(n(-title.size * 0.012))\" fill=\"\(palette.primary)\">\(escape(line))</text>\n"
         }
-        out += "</text>\n"
 
         if let author {
             out += "<text x=\"\(n(margin))\" y=\"\(n(authorBaseline))\" font-family=\"\(fonts)\" font-size=\"\(n(authorSize))\" "

@@ -48,7 +48,7 @@ final class ImportService {
                 app.show("“\(entry.book.title)” is already in your library.")
                 return entry
             }
-            Task { await enrich(entry) }
+            Task { await enrich(entry, sourceName: url.deletingPathExtension().lastPathComponent) }
             return entry
         } catch {
             app.show("Could not add \(url.lastPathComponent): \(error.localizedDescription)", isError: true)
@@ -106,16 +106,18 @@ final class ImportService {
 
     // MARK: Enrichment
 
-    private func enrich(_ entry: BookEntry) async {
+    /// `sourceName` is the file name the book arrived with; a title equal to it is a
+    /// placeholder that real metadata may replace.
+    private func enrich(_ entry: BookEntry, sourceName: String) async {
         var entry = entry
         app.busyBooks[entry.id] = "Reading…"
         defer { app.busyBooks[entry.id] = nil }
 
         switch entry.book.format {
         case .pdf:
-            entry = await enrichPDF(entry)
+            entry = await enrichPDF(entry, sourceName: sourceName)
         case .epub, .mobi, .azw3:
-            entry = await enrichReflowable(entry)
+            entry = await enrichReflowable(entry, sourceName: sourceName)
         case .article:
             break
         }
@@ -126,7 +128,7 @@ final class ImportService {
         }
     }
 
-    private func enrichPDF(_ entry: BookEntry) async -> BookEntry {
+    private func enrichPDF(_ entry: BookEntry, sourceName: String) async -> BookEntry {
         let file = entry.fileURL
         let textStore = app.textStore
         let book = entry.book
@@ -170,10 +172,9 @@ final class ImportService {
             if paper == nil, let title = hints.guessedTitle ?? facts.title, title.count > 12 { paper = try? await client.search(title: title) }
         }
 
-        let fileStem = file.deletingPathExtension().lastPathComponent
         app.update(entry.id) { book in
             book.pageCount = facts.pages
-            let untitled = book.title.isEmpty || book.title.caseInsensitiveCompare(fileStem) == .orderedSame || Self.looksLikeFileName(book.title)
+            let untitled = Self.isPlaceholder(book.title, sourceName: sourceName, entry: entry)
             if let paper {
                 if untitled || book.kind != .paper { book.title = paper.title }
                 if book.authors.isEmpty { book.authors = paper.authors }
@@ -201,19 +202,23 @@ final class ImportService {
         return app.entry(entry.id) ?? entry
     }
 
+    private static func isPlaceholder(_ title: String, sourceName: String, entry: BookEntry) -> Bool {
+        title.isEmpty || title.caseInsensitiveCompare(sourceName) == .orderedSame
+            || title == entry.folder.lastPathComponent || looksLikeFileName(title)
+    }
+
     private static func looksLikeFileName(_ title: String) -> Bool {
         title.range(of: #"^[\w\-. ]+\.(pdf|docx?|tex|dvi|indd)$"#, options: [.regularExpression, .caseInsensitive]) != nil
             || title.range(of: #"^(untitled|microsoft word|\d{4}\.\d{4,5}(v\d+)?)"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
-    private func enrichReflowable(_ entry: BookEntry) async -> BookEntry {
+    private func enrichReflowable(_ entry: BookEntry, sourceName: String) async -> BookEntry {
         let probe = BookProbe()
         self.probe = probe
         guard let info = await probe.inspect(entry.fileURL) else { return entry }
         self.probe = nil
-        let fileStem = entry.fileURL.deletingPathExtension().lastPathComponent
         app.update(entry.id) { book in
-            if !info.title.isEmpty, book.title.isEmpty || book.title.caseInsensitiveCompare(fileStem) == .orderedSame || book.title == entry.folder.lastPathComponent { book.title = info.title }
+            if !info.title.isEmpty, Self.isPlaceholder(book.title, sourceName: sourceName, entry: entry) { book.title = info.title }
             if book.authors.isEmpty { book.authors = info.authors }
             if book.summary == nil, !info.summary.isEmpty { book.summary = info.summary.strippingHTML }
             if book.publisher == nil, !info.publisher.isEmpty { book.publisher = info.publisher }
