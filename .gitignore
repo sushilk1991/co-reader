@@ -12,3 +12,6 @@ output/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcworkspace/xcuserdata/
 *.swp
+Coreader.xcodeproj
+Sources/CoreaderApp/Info.plist
+.claude/

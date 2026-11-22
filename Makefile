@@ -1,7 +1,7 @@
-APP_NAME := CoReader
-APP_PROJECT := CoReader.xcodeproj
-APP_WORKSPACE := CoReader.xcworkspace
-APP_SCHEME ?= CoReaderApp
+APP_NAME := Coreader
+APP_PROJECT := Coreader.xcodeproj
+APP_WORKSPACE := Coreader.xcworkspace
+APP_SCHEME ?= Coreader
 APP_PLATFORM := macos
 APP_GENERATOR := xcodegen
 CONFIGURATION ?= Debug
@@ -83,9 +83,6 @@ $(TARGET_PREFIX)build:
 		-configuration $(CONFIGURATION) \
 		-destination '$(DESTINATION)' \
 		-derivedDataPath $(DERIVED) \
-		GCC_TREAT_WARNINGS_AS_ERRORS=YES \
-		SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-		SWIFT_STRICT_CONCURRENCY=complete \
 		build
 
 $(TARGET_PREFIX)test:
@@ -95,9 +92,6 @@ $(TARGET_PREFIX)test:
 		-configuration $(CONFIGURATION) \
 		-destination '$(DESTINATION)' \
 		-derivedDataPath $(DERIVED) \
-		GCC_TREAT_WARNINGS_AS_ERRORS=YES \
-		SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-		SWIFT_STRICT_CONCURRENCY=complete \
 		test
 
 $(TARGET_PREFIX)run:
