@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Save to Coreader",
+  "short_name": "Coreader",
+  "version": "0.1.0",
+  "description": "Send the page you are reading, or the text you selected, to the Coreader app on this Mac.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Save to Coreader",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "contextMenus", "scripting"],
+  "commands": {
+    "save-page": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Alt+Shift+S"
+      },
+      "description": "Save page to Coreader"
+    },
+    "save-selection": {
+      "description": "Save selection to Coreader"
+    }
+  }
+}
