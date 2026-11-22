@@ -173,6 +173,17 @@ final class ReaderModel {
         let notes = app.notes
         let entry = entry
         Task {
+            do {
+                // The book and its notes may be iCloud placeholders on this Mac.
+                try await CloudFile.ensureLocal(entry.fileURL)
+                if FileManager.default.fileExists(atPath: entry.notesURL.path) || !CloudFile.isLocal(entry.notesURL) {
+                    try await CloudFile.ensureLocal(entry.notesURL)
+                }
+            } catch {
+                isLoading = false
+                loadError = error.localizedDescription
+                return
+            }
             annotations = (try? await offMain { try notes.load(entry) }) ?? []
             openDocument()
         }
@@ -452,12 +463,21 @@ final class ReaderModel {
             return
         }
         // Photograph the page being left, move underneath, then animate the photo away.
-        web.webView.takeSnapshot(with: nil) { [weak self] image, _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if let image { self.turn = TurningPage(image: image, forward: forward) }
-                forward ? web.next() : web.previous()
-            }
+        // The page must turn even if the photograph never arrives, so a short deadline
+        // turns it plainly; whichever comes first wins.
+        var turned = false
+        let advance: (NSImage?) -> Void = { [weak self] image in
+            guard !turned else { return }
+            turned = true
+            if let image { self?.turn = TurningPage(image: image, forward: forward) }
+            forward ? web.next() : web.previous()
+        }
+        web.webView.takeSnapshot(with: nil) { image, _ in
+            MainActor.assumeIsolated { advance(image) }
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(180))
+            advance(nil)
         }
     }
 
