@@ -51,6 +51,9 @@ final class ImportService {
         do {
             let known = Set(app.books.map(\.id))
             let entry = try await offMain { try library.importFile(at: url, metadata: metadata) }
+            // The library folder was switched while this import ran: the book belongs to
+            // the old folder and must not appear on the new shelf.
+            guard app.library.root == library.root else { return nil }
             app.replace(entry)
             if known.contains(entry.id) {
                 app.show("“\(entry.book.title)” is already in your library.")
@@ -102,7 +105,7 @@ final class ImportService {
                     if let selection, !selection.isEmpty {
                         let note = Annotation(kind: .highlight, quote: selection, locator: Locator(fraction: 0))
                         let notes = app.notes
-                        _ = try? await offMain { try notes.upsert(note, in: entry) }
+                        WriteQueue.shared.enqueue(WriteQueue.notes(entry.id), { try notes.upsert(note, in: entry) })
                     }
                 }
                 try? FileManager.default.removeItem(at: file)
@@ -202,10 +205,7 @@ final class ImportService {
         // A first page with almost no text is a real cover (a scanned or designed book);
         // a page full of text is not, and gets a generated cover instead.
         if !hints.isLikelyPaper, facts.firstPageWords < 70, facts.pages > 8, let png = facts.firstPagePNG {
-            let library = app.library
-            if let updated = try? await offMain({ try library.setCover(png, fileExtension: "jpg", generated: false, forBookID: entry.id) }) {
-                keepMemoryState(updated)
-            }
+            await storeCover(png, fileExtension: "jpg", generated: false, for: entry.id)
         }
         return app.entry(entry.id) ?? entry
     }
@@ -234,23 +234,22 @@ final class ImportService {
             if book.year == nil, let y = Int(info.published.prefix(4)) { book.year = y }
         }
         if let cover = info.cover, !cover.isEmpty {
-            let library = app.library
-            let ext = NSBitmapImageRep(data: cover) != nil && cover.starts(with: [0x89, 0x50]) ? "png" : "jpg"
-            if let updated = try? await offMain({ try library.setCover(cover, fileExtension: ext, generated: false, forBookID: entry.id) }) {
-                keepMemoryState(updated)
-            }
+            await storeCover(cover, fileExtension: cover.starts(with: [0x89, 0x50]) ? "png" : "jpg", generated: false, for: entry.id)
         }
         return app.entry(entry.id) ?? entry
     }
 
-    /// `setCover` returns the entry as stored on disk; in-memory edits made a moment ago
-    /// may not be written yet, so only the cover fields are taken from it.
-    private func keepMemoryState(_ stored: BookEntry) {
-        app.update(stored.id) { book in
-            book.coverFile = stored.book.coverFile
-            book.coverIsGenerated = stored.book.coverIsGenerated
+    /// Writes the image into the book's folder, then records it through the ordered
+    /// metadata writer so it cannot roll back a newer title, rating or reading position.
+    private func storeCover(_ data: Data, fileExtension: String, generated: Bool, for id: String) async {
+        guard let entry = app.entry(id) else { return }
+        let library = app.library, folder = entry.folder, old = entry.book.coverFile
+        guard let name = try? await offMain({ try library.writeCoverFile(data, fileExtension: fileExtension, in: folder, replacing: old) }) else { return }
+        app.update(id) { book in
+            book.coverFile = name
+            book.coverIsGenerated = generated
         }
-        app.coverVersion[stored.id, default: 0] += 1
+        app.coverVersion[id, default: 0] += 1
     }
 
     private func brief(for book: Book) -> CoverBrief {
@@ -261,10 +260,7 @@ final class ImportService {
         guard let current = app.entry(entry.id) else { return entry }
         let svg = ProceduralCover.svg(for: brief(for: current.book), width: 800, height: 1200)
         guard let image = NSImage(data: Data(svg.utf8)), let png = image.pngData(size: NSSize(width: 800, height: 1200)) else { return current }
-        let library = app.library
-        if let updated = try? await offMain({ try library.setCover(png, fileExtension: "png", generated: true, forBookID: entry.id) }) {
-            keepMemoryState(updated)
-        }
+        await storeCover(png, fileExtension: "png", generated: true, for: entry.id)
         return app.entry(entry.id) ?? current
     }
 
@@ -283,9 +279,7 @@ final class ImportService {
             let file = try await generator.generate(brief(for: entry.book), backend: backend, outputDirectory: dir)
             let data = try Data(contentsOf: file)
             guard let image = NSImage(data: data), let jpg = image.jpegData(maxDimension: 1600) else { return }
-            let library = app.library
-            let updated = try await offMain { try library.setCover(jpg, fileExtension: "jpg", generated: true, forBookID: id) }
-            keepMemoryState(updated)
+            await storeCover(jpg, fileExtension: "jpg", generated: true, for: id)
         } catch {
             DebugHooks.log("cover generation failed: \(error)")
         }

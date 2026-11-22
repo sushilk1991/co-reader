@@ -142,15 +142,16 @@ final class AppModel {
 
     // MARK: Books
 
-    /// Applies a change to a book and writes `book.json`.
+    /// Applies a change to a book and writes `book.json`. Writes for one book run in
+    /// order, each with the state at the time it was asked for, so the last change wins
+    /// on disk as it does in memory.
     func update(_ id: String, _ change: (inout Book) -> Void) {
         guard let index = books.firstIndex(where: { $0.id == id }) else { return }
         change(&books[index].book)
         let entry = books[index]
         let library = library
-        Task {
-            do { try await offMain { try library.save(entry.book, in: entry.folder) } }
-            catch { show("Could not save changes to “\(entry.book.title)”.", isError: true) }
+        WriteQueue.shared.enqueue(WriteQueue.book(id), { try library.save(entry.book, in: entry.folder) }) { [weak self] _ in
+            self?.show("Could not save changes to “\(entry.book.title)”.", isError: true)
         }
     }
 
@@ -177,12 +178,17 @@ final class AppModel {
     func delete(_ id: String) {
         guard let entry = entry(id) else { return }
         if case .reader(let open) = route, open == id { closeReader() }
-        books.removeAll { $0.id == id }
         let library = library
         Task {
-            do { try await offMain { try library.delete(id: id) } }
-            catch { show("Could not remove “\(entry.book.title)”.", isError: true) }
-            show("Moved “\(entry.book.title)” to the Trash.")
+            do {
+                // Behind any writes still queued for this book, and only then off the shelf.
+                try await WriteQueue.shared.perform(WriteQueue.notes(id)) {}
+                try await WriteQueue.shared.perform(WriteQueue.book(id)) { try library.delete(id: id) }
+                books.removeAll { $0.id == id }
+                show("Moved “\(entry.book.title)” to the Trash.")
+            } catch {
+                show("Could not move “\(entry.book.title)” to the Trash: \(error.localizedDescription)", isError: true)
+            }
         }
     }
 

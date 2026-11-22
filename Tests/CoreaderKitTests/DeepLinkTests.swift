@@ -10,3 +10,10 @@ import Testing
     #expect(DeepLink(url: p.url) == p)
     #expect(DeepLink(url: URL(string: "https://example.com")!) == nil)
 }
+
+@Test func deepLinkIgnoresNonFinitePositions() {
+    for bad in ["nan", "inf", "-infinity"] {
+        let link = DeepLink(url: URL(string: "coreader://open?book=b1&at=\(bad)")!)
+        #expect(link == .book(id: "b1"))
+    }
+}

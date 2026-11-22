@@ -167,7 +167,11 @@ final class WebReaderController: NSObject {
     fileprivate func handle(_ body: Any) {
         guard let m = body as? [String: Any], let type = m["type"] as? String else { return }
         func s(_ k: String) -> String { m[k] as? String ?? "" }
-        func d(_ k: String) -> Double { (m[k] as? NSNumber)?.doubleValue ?? 0 }
+        func d(_ k: String) -> Double {
+            // The page can report NaN (a section of zero size); nothing downstream wants it.
+            let value = (m[k] as? NSNumber)?.doubleValue ?? 0
+            return value.isFinite ? value : 0
+        }
         func rect(_ k: String) -> CGRect {
             guard let r = m[k] as? [String: Any] else { return .zero }
             func n(_ k: String) -> Double { (r[k] as? NSNumber)?.doubleValue ?? 0 }
@@ -200,7 +204,10 @@ final class WebReaderController: NSObject {
         case "openFailed":
             onEvent(.openFailed(s("message")))
         case "relocate":
-            onEvent(.relocated(.init(cfi: s("cfi"), fraction: d("fraction"), chapter: s("chapter"),
+            // While a book is first laid out the page can report a position that is not a
+            // number. Skipping it keeps the saved reading position from being reset.
+            guard let raw = (m["fraction"] as? NSNumber)?.doubleValue, raw.isFinite else { break }
+            onEvent(.relocated(.init(cfi: s("cfi"), fraction: min(max(d("fraction"), 0), 1), chapter: s("chapter"),
                                      page: s("page"), visibleText: s("visibleText"))))
         case "selection":
             onEvent(.selection(.init(text: s("text"), cfi: s("cfi"), context: s("context"),
@@ -275,6 +282,9 @@ private final class MessageProxy: NSObject, WKScriptMessageHandler {
     weak var target: WebReaderController?
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        // Book content renders in sub-frames. Should a script in one ever run, it still
+        // cannot forge reader events: only the main frame is listened to.
+        guard message.frameInfo.isMainFrame else { return }
         target?.handle(message.body)
     }
 }

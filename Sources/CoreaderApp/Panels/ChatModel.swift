@@ -48,6 +48,9 @@ final class ChatModel {
     @ObservationIgnored private var session: AgentSession?
     @ObservationIgnored private var sessionAgent: AgentKind?
     @ObservationIgnored private var turn: Task<Void, Never>?
+    /// The reply being written now. A stopped turn's late events must not touch state
+    /// that already belongs to the next turn.
+    @ObservationIgnored private var activeReply: UUID?
 
     var app: AppModel? { reader?.app }
 
@@ -74,6 +77,7 @@ final class ChatModel {
     func stop() {
         turn?.cancel()
         session?.cancel()
+        activeReply = nil
         isResponding = false
         if let last = messages.indices.last, messages[last].isStreaming {
             messages[last].isStreaming = false
@@ -102,6 +106,7 @@ final class ChatModel {
         messages.append(ChatMessage(role: .user, text: display ?? question, quote: quote?.text, attachment: attachment))
         messages.append(ChatMessage(role: .assistant, text: "", activity: "Thinking…", isStreaming: true))
         let replyID = messages[messages.count - 1].id
+        activeReply = replyID
         isResponding = true
 
         let prompt = buildPrompt(question: question, quote: quote, reader: reader)
@@ -114,7 +119,7 @@ final class ChatModel {
         turn = Task { [weak self] in
             do {
                 for try await event in session.send(prompt, attachments: attachment.map { [$0] } ?? []) {
-                    guard let self, let i = self.messages.firstIndex(where: { $0.id == replyID }) else { return }
+                    guard let self, self.activeReply == replyID, let i = self.messages.firstIndex(where: { $0.id == replyID }) else { return }
                     switch event {
                     case .sessionStarted:
                         break
@@ -135,6 +140,8 @@ final class ChatModel {
     }
 
     private func finish(_ id: UUID, error: Error?) {
+        guard activeReply == id else { return }
+        activeReply = nil
         isResponding = false
         guard let i = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[i].isStreaming = false
@@ -186,7 +193,7 @@ final class ChatModel {
     private func buildPrompt(question: String, quote: ReaderSelection?, reader: ReaderModel) -> String {
         var parts: [String] = []
         let place = [reader.chapter, reader.pageLabel].filter { !$0.isEmpty }.joined(separator: ", ")
-        if !place.isEmpty { parts.append("[I am at: \(place), \(Int(reader.fraction * 100))% through the book]") }
+        if !place.isEmpty { parts.append("[I am at: \(place), \(reader.fraction.percent)% through the book]") }
         if let quote {
             parts.append("Selected passage\(quote.locator.label.map { " (\($0))" } ?? ""):\n\"\"\"\n\(quote.text)\n\"\"\"")
             if quote.context.count > quote.text.count + 40 { parts.append("Paragraph around it:\n\"\"\"\n\(quote.context)\n\"\"\"") }

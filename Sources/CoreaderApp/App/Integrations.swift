@@ -10,24 +10,37 @@ enum Integrations {
         var output: String
     }
 
-    /// Runs a tool with a timeout and no shell.
+    /// Runs a tool with a timeout and no shell. Output goes to a temporary file, not a
+    /// pipe: a pipe stays open while any descendant of the tool holds it, and reading it
+    /// to the end would then wait past the timeout.
     static func run(_ executable: URL, _ arguments: [String], timeout: TimeInterval = 20) async -> CommandResult {
-        await Task.detached {
+        await Task.detached { runBlocking(executable, arguments, timeout: timeout) }.value
+    }
+
+    private static func runBlocking(_ executable: URL, _ arguments: [String], timeout: TimeInterval) -> CommandResult {
+        do {
+            let capture = FileManager.default.temporaryDirectory.appendingPathComponent("coreader-run-\(UUID().uuidString).txt")
+            FileManager.default.createFile(atPath: capture.path, contents: nil)
+            defer { try? FileManager.default.removeItem(at: capture) }
+            guard let output = try? FileHandle(forWritingTo: capture) else { return CommandResult(status: -1, output: "") }
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
+            process.standardOutput = output
+            process.standardError = output
             process.standardInput = FileHandle.nullDevice
+            let finished = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in finished.signal() }
             do { try process.run() } catch { return CommandResult(status: -1, output: error.localizedDescription) }
-            let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            deadline.cancel()
-            return CommandResult(status: process.terminationStatus, output: String(data: data, encoding: .utf8) ?? "")
-        }.value
+            if finished.wait(timeout: .now() + timeout) == .timedOut {
+                process.terminate()
+                if finished.wait(timeout: .now() + 2) == .timedOut { kill(process.processIdentifier, SIGKILL) }
+                return CommandResult(status: -2, output: "Timed out.")
+            }
+            try? output.close()
+            let data = (try? Data(contentsOf: capture)) ?? Data()
+            return CommandResult(status: process.terminationStatus, output: String(data: data.prefix(200_000), encoding: .utf8) ?? "")
+        }
     }
 
     static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
@@ -80,15 +93,30 @@ enum Integrations {
         for home in skillHomes { try copySkill(from: skill, named: "coreader", into: home) }
     }
 
-    /// Copies a skill folder into a skills directory, replacing an older copy of the same skill.
+    /// Marker left in every skill folder Coreader installs, so it only ever replaces its own.
+    static let skillMarker = ".installed-by-coreader"
+
+    /// Copies a skill folder into a skills directory. An existing folder of the same name
+    /// is replaced only if Coreader installed it; a skill the user wrote by hand is left
+    /// alone and the install fails with an explanation. The new copy is staged first, so
+    /// a failed copy never leaves the old one gone.
     static func copySkill(from source: URL, named name: String, into skills: URL) throws {
         let fm = FileManager.default
         try fm.createDirectory(at: skills, withIntermediateDirectories: true)
         let target = skills.appendingPathComponent(name)
-        if fm.fileExists(atPath: target.path) || (try? fm.destinationOfSymbolicLink(atPath: target.path)) != nil {
-            try fm.removeItem(at: target)
+        let exists = fm.fileExists(atPath: target.path) || (try? fm.destinationOfSymbolicLink(atPath: target.path)) != nil
+        if exists, !fm.fileExists(atPath: target.appendingPathComponent(skillMarker).path) {
+            throw Problem("A skill named “\(name)” already exists in \(skills.path) and was not installed by Coreader. Rename or remove it first.")
         }
-        try fm.copyItem(at: source, to: target)
+        let staged = skills.appendingPathComponent(".\(name).coreader-staging")
+        try? fm.removeItem(at: staged)
+        try fm.copyItem(at: source, to: staged)
+        fm.createFile(atPath: staged.appendingPathComponent(skillMarker).path, contents: nil)
+        if exists {
+            _ = try fm.replaceItemAt(target, withItemAt: staged)
+        } else {
+            try fm.moveItem(at: staged, to: target)
+        }
     }
 
     // MARK: Mastisk

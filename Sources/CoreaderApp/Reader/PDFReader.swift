@@ -293,12 +293,29 @@ final class PDFReaderController: NSObject {
 
     // MARK: Search
 
+    private var searchContinuation: CheckedContinuation<Void, Never>?
+    private var searchFound: [PDFSelection] = []
+    private static let searchLimit = 300
+
+    /// Searches with PDFKit's incremental search, which reports matches as it goes and
+    /// can be stopped, so a common word in a long document neither freezes the window nor
+    /// collects thousands of matches.
     func search(_ query: String) async -> [SearchHit] {
         clearSearch()
         guard let document else { return [] }
-        let found = document.findString(query, withOptions: [.caseInsensitive, .diacriticInsensitive])
+        document.cancelFindString()
+        finishSearch()
+        // Matches stay on the main actor in `searchFound`; the continuation only signals the end.
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            searchFound = []
+            searchContinuation = c
+            document.delegate = self
+            document.beginFindString(query, withOptions: [.caseInsensitive, .diacriticInsensitive])
+        }
+        let found = searchFound
+        searchFound = []
         var hits: [SearchHit] = []
-        for selection in found.prefix(300) {
+        for selection in found {
             guard let page = selection.pages.first, let match = selection.string else { continue }
             let index = document.index(for: page)
             let extended = selection.copy() as! PDFSelection
@@ -319,7 +336,13 @@ final class PDFReaderController: NSObject {
         return hits
     }
 
+    private func finishSearch() {
+        searchContinuation?.resume()
+        searchContinuation = nil
+    }
+
     func clearSearch() {
+        document?.cancelFindString()
         for mark in searchMarks { mark.page?.removeAnnotation(mark) }
         searchMarks = []
     }
@@ -430,5 +453,20 @@ enum WKSnapshotConfigurationBox {
         let config = WKSnapshotConfiguration()
         config.rect = rect
         return config
+    }
+}
+
+extension PDFReaderController: PDFDocumentDelegate {
+    nonisolated func didMatchString(_ instance: PDFSelection) {
+        nonisolated(unsafe) let instance = instance
+        MainActor.assumeIsolated {
+            guard searchContinuation != nil else { return }
+            searchFound.append(instance)
+            if searchFound.count >= Self.searchLimit { document?.cancelFindString(); finishSearch() }
+        }
+    }
+
+    nonisolated func documentDidEndDocumentFind(_ notification: Notification) {
+        MainActor.assumeIsolated { finishSearch() }
     }
 }

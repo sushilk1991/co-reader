@@ -84,7 +84,7 @@ struct BookDetail: View {
                     .padding(.top, 20)
 
                     HStack(spacing: 22) {
-                        fact("\(Int((book.progress * 100).rounded()))%", "read")
+                        fact("\(book.progress.percent)%", "read")
                         fact(Duration.seconds(book.secondsRead).formatted(.units(allowed: [.hours, .minutes], width: .narrow, maximumUnitCount: 2)), "time")
                         fact("\(notes.filter { $0.kind == .highlight }.count)", "highlights")
                         fact("\(notes.filter { !$0.note.isEmpty }.count)", "notes")

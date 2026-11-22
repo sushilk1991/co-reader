@@ -167,7 +167,7 @@ struct AnnotationCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 ForEach(HighlightColor.allCases, id: \.self) { color in
-                    Button { reader.update(annotation.id) { $0.color = color } } label: {
+                    Button { reader.update(annotation.id, .color(color)) } label: {
                         Circle().fill(color.color).frame(width: 15, height: 15)
                             .overlay { if annotation.color == color { Circle().strokeBorder(palette.ink.opacity(0.55), lineWidth: 1.5).padding(-3) } }
                     }
@@ -230,7 +230,7 @@ struct AnnotationCard: View {
     private func commit() {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed != annotation.note, reader.annotations.contains(where: { $0.id == annotation.id }) else { return }
-        reader.update(annotation.id) { $0.note = trimmed }
+        reader.update(annotation.id, .note(trimmed))
     }
 }
 

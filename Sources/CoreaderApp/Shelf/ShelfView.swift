@@ -368,7 +368,7 @@ private struct BookCell: View {
                 } else if book.rating != nil || hovering {
                     StarRating(rating: book.rating, size: 10) { app.setRating($0, for: entry.id) }
                 } else if book.status == .reading {
-                    Text("\(Int((book.progress * 100).rounded()))%")
+                    Text("\(book.progress.percent)%")
                         .font(Typo.ui(10.5).monospacedDigit())
                         .foregroundStyle(palette.tertiary)
                 } else if book.kind != .book {
@@ -511,7 +511,7 @@ private struct Today: View {
     }
 
     private func progressText(_ book: Book) -> String {
-        let percent = "\(Int((book.progress * 100).rounded()))%"
+        let percent = "\(book.progress.percent)%"
         guard book.secondsRead > 300, book.progress > 0.03, book.progress < 0.99 else { return percent }
         let remaining = book.secondsRead / book.progress * (1 - book.progress)
         return "\(percent)  ·  about \(Duration.seconds(remaining).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated, maximumUnitCount: 1))) left"
@@ -528,7 +528,7 @@ private struct TodayStats: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Today").labelStyle(palette)
             HStack(alignment: .firstTextBaseline, spacing: 22) {
-                stat("\(Int(review.secondsToday / 60))", "min read")
+                stat("\(review.secondsToday.minutes)", "min read")
                 stat("\(review.streak)", review.streak == 1 ? "day streak" : "day streak")
                 stat("\(review.all.filter { $0.annotation.kind != .image }.count)", "notes")
             }
@@ -547,7 +547,7 @@ private struct TodayStats: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 52, alignment: .bottom)
-                    .help("\(Int(day.seconds / 60)) min")
+                    .help("\(day.seconds.minutes) min")
                 }
             }
             .padding(.top, 18)
@@ -598,7 +598,7 @@ struct ProgressLine: View {
         .frame(height: 3)
         .accessibilityElement()
         .accessibilityLabel("Progress")
-        .accessibilityValue("\(Int(value * 100)) percent")
+        .accessibilityValue("\(value.percent) percent")
     }
 }
 

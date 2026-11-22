@@ -28,6 +28,11 @@ final class ArticleFetcher: NSObject, WKNavigationDelegate {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             continuation = c
             webView.load(URLRequest(url: url, timeoutInterval: 30))
+            // Some pages never report that they finished; whatever has loaded by then is used.
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(35))
+                self?.resume(nil)
+            }
         }
         // Give client-rendered pages a moment to fill in.
         try? await Task.sleep(for: .milliseconds(900))
@@ -44,19 +49,25 @@ final class ArticleFetcher: NSObject, WKNavigationDelegate {
                               sourceURL: webView.url ?? url, publishedAt: date, contentHTML: html, excerpt: s("excerpt"))
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        continuation?.resume()
-        continuation = nil
+    /// Ends the wait exactly once, whichever of load, failure, crash or deadline comes first.
+    private func resume(_ failure: Failure?) {
+        guard let continuation else { return }
+        self.continuation = nil
+        if let failure { continuation.resume(throwing: failure) } else { continuation.resume() }
     }
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { resume(nil) }
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        continuation?.resume(throwing: Failure.loadFailed(error.localizedDescription))
-        continuation = nil
+        resume(.loadFailed(error.localizedDescription))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        continuation?.resume(throwing: Failure.loadFailed(error.localizedDescription))
-        continuation = nil
+        resume(.loadFailed(error.localizedDescription))
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        resume(.loadFailed("the page stopped responding"))
     }
 
     /// A compact readability pass: pick the element holding the most paragraph text,

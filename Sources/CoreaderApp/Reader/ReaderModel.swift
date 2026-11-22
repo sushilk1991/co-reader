@@ -30,6 +30,19 @@ struct Glance: Identifiable, Equatable {
     var failed = false
 }
 
+/// One user edit to an annotation, small enough to replay onto the copy in the file.
+enum AnnotationEdit: Sendable {
+    case color(HighlightColor)
+    case note(String)
+
+    func apply(to annotation: inout Annotation) {
+        switch self {
+        case .color(let color): annotation.color = color
+        case .note(let text): annotation.note = text
+        }
+    }
+}
+
 /// A citation the reader clicked in a paper, with the cited work once it is found.
 struct CitationLookup: Identifiable, Equatable {
     let id = UUID()
@@ -72,7 +85,11 @@ final class ReaderModel {
     var visibleText = ""
 
     var selection: ReaderSelection?
-    var glance: Glance?
+    var glance: Glance? {
+        // Dismissing a quick answer stops the agent that was still writing it.
+        didSet { if glance == nil { glanceTask?.cancel() } }
+    }
+    @ObservationIgnored private var glanceTask: Task<Void, Never>?
     var citation: CitationLookup?
     /// Highlights from other books that resemble the page in view.
     var echoes: [RelatedFinder.Match] = []
@@ -122,8 +139,9 @@ final class ReaderModel {
     init(entry: BookEntry, app: AppModel) {
         self.entry = entry
         self.app = app
-        fraction = entry.book.progress
-        currentLocator = entry.book.location ?? Locator(fraction: entry.book.progress)
+        let progress = entry.book.progress.isFinite ? min(max(entry.book.progress, 0), 1) : 0
+        fraction = progress
+        currentLocator = entry.book.location ?? Locator(fraction: progress)
         panel = UserDefaults.standard.string(forKey: "reader.panel").flatMap(ReaderPanel.init(rawValue:))
         chat = ChatModel()
         if entry.book.format == .pdf {
@@ -171,13 +189,24 @@ final class ReaderModel {
 
     private func openDocument() {
         let settings = app.settings
+        // A link that opened this book decides where it opens; restoring the saved place
+        // first and jumping afterwards would race.
+        var start = entry.book.location
+        if let link = pendingLink {
+            switch link {
+            case .book: break
+            case .location(_, let locator): start = locator
+            case .annotation(_, let id): start = annotations.first { $0.id == id }?.locator ?? start
+            }
+            if start?.cfi != nil || start?.page != nil { pendingLink = nil }
+        }
         if let web {
             web.onEvent = { [weak self] in self?.handle($0) }
             let marks = annotations.compactMap(mark(for:))
-            web.open(file: entry.fileURL, lastCFI: entry.book.location?.cfi, marks: marks, settings: webSettings)
+            web.open(file: entry.fileURL, lastCFI: start?.cfi, marks: marks, settings: webSettings)
         } else if let pdf {
             pdf.onEvent = { [weak self] in self?.handle($0) }
-            pdf.open(file: entry.fileURL, page: entry.book.location?.page ?? 0, annotations: annotations,
+            pdf.open(file: entry.fileURL, page: start?.page ?? 0, annotations: annotations,
                      settings: settings, theme: app.theme)
         }
     }
@@ -194,6 +223,8 @@ final class ReaderModel {
         saveTask?.cancel()
         persistLocation()
         chat.stop()
+        glanceTask?.cancel()
+        echoTask?.cancel()
         pdf?.dispose()
     }
 
@@ -253,7 +284,7 @@ final class ReaderModel {
                 withAnimation(.easeInOut(duration: 0.2)) { isChromeVisible.toggle() }
             }
         case .externalLink(let url):
-            if url.scheme == DeepLink.scheme { app.handle(url: url) } else { NSWorkspace.shared.open(url) }
+            openExternal(url)
         case .textSection(let index, let title, let cfi, let fraction, let text):
             textSections.append(.init(index: index, title: title, locator: Locator(cfi: cfi, fraction: fraction, label: title), text: text))
         case .textDone:
@@ -295,9 +326,19 @@ final class ReaderModel {
         case .tap:
             if activeAnnotation != nil || glance != nil { activeAnnotation = nil; glance = nil }
         case .link(let url):
-            if url.scheme == DeepLink.scheme { app.handle(url: url) } else { NSWorkspace.shared.open(url) }
+            openExternal(url)
         case .citation(let entry, let rect):
             lookUpCitation(entry, rect: rect)
+        }
+    }
+
+    /// Links inside books are untrusted: only web and mail links leave the app, and only
+    /// Coreader's own links are followed inside it. File and other app schemes are ignored.
+    private func openExternal(_ url: URL) {
+        switch url.scheme?.lowercased() {
+        case DeepLink.scheme: app.handle(url: url)
+        case "http", "https", "mailto": NSWorkspace.shared.open(url)
+        default: break
         }
     }
 
@@ -433,6 +474,7 @@ final class ReaderModel {
     }
 
     func go(toFraction f: Double) {
+        guard f.isFinite else { return }
         if let web { web.go(toFraction: f) } else { pdf?.go(toFraction: f) }
     }
 
@@ -505,6 +547,15 @@ final class ReaderModel {
     func highlight(_ color: HighlightColor, note: String = "") -> Annotation? {
         guard let s = selection else { return nil }
         UserDefaults.standard.set(color.rawValue, forKey: "highlight.lastColor")
+        // The same passage highlighted again changes its colour; two marks on one range
+        // could not be told apart on the page.
+        if let cfi = s.locator.cfi, let existing = annotations.first(where: { $0.kind == .highlight && $0.locator.cfi == cfi }) {
+            update(existing.id, .color(color))
+            if !note.isEmpty { update(existing.id, .note(note)) }
+            web?.clearSelection()
+            selection = nil
+            return annotations.first { $0.id == existing.id }
+        }
         let annotation = Annotation(kind: .highlight, quote: s.text.collapsingWhitespace, note: note, color: color,
                                     locator: s.locator, chapter: s.chapter.isEmpty ? nil : s.chapter)
         annotations.append(annotation)
@@ -527,26 +578,34 @@ final class ReaderModel {
         activeAnnotation = .init(id: a.id, rect: rect)
     }
 
-    func update(_ id: String, _ change: (inout Annotation) -> Void) {
+    /// Changes one field of an annotation. The change is applied to the annotation as it
+    /// is in the file at write time, so text edited elsewhere since the book was opened
+    /// is not overwritten by the copy in memory.
+    func update(_ id: String, _ edit: AnnotationEdit) {
         guard let index = annotations.firstIndex(where: { $0.id == id }) else { return }
-        change(&annotations[index])
+        edit.apply(to: &annotations[index])
         let a = annotations[index]
         if let mark = mark(for: a) { web?.update(mark) }
         pdf?.update(a)
-        save(a)
+        let notes = app.notes, entry = entry
+        WriteQueue.shared.enqueue(WriteQueue.notes(entry.id), {
+            // Missing from the file (not yet written, or removed by hand): write it whole.
+            if try notes.update(id: id, in: entry, { edit.apply(to: &$0) }) == nil { try notes.upsert(a, in: entry) }
+        }, onError: writeFailed)
     }
 
     func remove(_ id: String) {
         guard let index = annotations.firstIndex(where: { $0.id == id }) else { return }
-        let a = annotations.remove(at: index)
+        annotations.remove(at: index)
         if activeAnnotation?.id == id { activeAnnotation = nil }
         web?.removeAnnotation(id: id)
         pdf?.remove(id: id)
         let notes = app.notes, entry = entry
-        Task {
-            do { try await offMain { try notes.remove(id: a.id, from: entry) } }
-            catch { app.show("Could not update the notes file.", isError: true) }
-        }
+        WriteQueue.shared.enqueue(WriteQueue.notes(entry.id), { try notes.remove(id: id, from: entry) }, onError: writeFailed)
+    }
+
+    private func writeFailed(_ error: Error) {
+        app.show("Could not write to the notes file: \(error.localizedDescription)", isError: true)
     }
 
     /// Adds a free-standing note at the current place (or stores an AI answer).
@@ -564,24 +623,26 @@ final class ReaderModel {
 
     private func save(_ a: Annotation) {
         let notes = app.notes, entry = entry
-        Task {
-            do { try await offMain { try notes.upsert(a, in: entry) } }
-            catch { app.show("Could not write to the notes file: \(error.localizedDescription)", isError: true) }
-        }
+        WriteQueue.shared.enqueue(WriteQueue.notes(entry.id), { try notes.upsert(a, in: entry) }, onError: writeFailed)
     }
 
     // MARK: Images and snips
 
     func saveImage(_ data: Data, fileExtension: String, caption: String, locator: Locator, chapter: String, announce: Bool = true) {
         let notes = app.notes, entry = entry
-        let name = (caption.isEmpty ? "figure" : caption).prefix(40)
+        let name = String((caption.isEmpty ? "figure" : caption).prefix(40))
+        let chapter = chapter.isEmpty ? nil : chapter
         Task {
             do {
-                let file = try await offMain { try notes.saveAsset(data, suggestedName: String(name), fileExtension: fileExtension, in: entry) }
-                let a = Annotation(kind: .image, quote: caption, locator: locator, chapter: chapter.isEmpty ? nil : chapter, asset: file)
+                // File and note are written in one queued step, in order with other edits.
+                let a: Annotation = try await WriteQueue.shared.perform(WriteQueue.notes(entry.id)) {
+                    let file = try notes.saveAsset(data, suggestedName: name, fileExtension: fileExtension, in: entry)
+                    let a = Annotation(kind: .image, quote: caption, locator: locator, chapter: chapter, asset: file)
+                    try notes.upsert(a, in: entry)
+                    return a
+                }
                 annotations.append(a)
                 sortAnnotations()
-                try await offMain { try notes.upsert(a, in: entry) }
                 if announce { app.show("Saved to your notes.") }
             } catch {
                 app.show("Could not save the image: \(error.localizedDescription)", isError: true)
@@ -728,17 +789,18 @@ final class ReaderModel {
             \(s.text)
             """
         }
-        Task {
+        glanceTask?.cancel()
+        glanceTask = Task { [weak self] in
             do {
                 let answer = try await AgentOneShot(agent: agent).complete(prompt, workingDirectory: nil, timeout: .seconds(90))
-                guard glance?.id == id else { return }
-                glance?.answer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-                glance?.isLoading = false
+                guard let self, self.glance?.id == id else { return }
+                self.glance?.answer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.glance?.isLoading = false
             } catch {
-                guard glance?.id == id else { return }
-                glance?.answer = error.localizedDescription
-                glance?.isLoading = false
-                glance?.failed = true
+                guard let self, self.glance?.id == id else { return }
+                self.glance?.answer = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                self.glance?.isLoading = false
+                self.glance?.failed = true
             }
         }
     }

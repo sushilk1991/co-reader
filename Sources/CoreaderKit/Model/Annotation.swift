@@ -101,7 +101,8 @@ public enum DeepLink: Sendable, Equatable {
         if let a = q["a"] { self = .annotation(bookID: book, annotationID: a); return }
         if let cfi = q["cfi"] { self = .location(bookID: book, locator: Locator(cfi: cfi)); return }
         if let p = q["page"], let n = Int(p), n >= 1 { self = .location(bookID: book, locator: Locator(page: n - 1)); return }
-        if let at = q["at"], let f = Double(at) { self = .location(bookID: book, locator: Locator(fraction: min(max(f, 0), 1))); return }
+        // NaN and infinity parse as Double and would trap later when turned into a page.
+        if let at = q["at"], let f = Double(at), f.isFinite { self = .location(bookID: book, locator: Locator(fraction: min(max(f, 0), 1))); return }
         self = .book(id: book)
     }
 }

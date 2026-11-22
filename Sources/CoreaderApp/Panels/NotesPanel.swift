@@ -228,7 +228,7 @@ private struct NoteRow: View {
 
             HStack(spacing: 10) {
                 Button { reader.go(to: annotation.locator) } label: {
-                    Text(annotation.locator.label ?? "\(Int(annotation.locator.fraction * 100))%")
+                    Text(annotation.locator.label ?? "\(annotation.locator.fraction.percent)%")
                         .font(Typo.ui(10.5, weight: .medium).monospacedDigit())
                         .foregroundStyle(palette.tertiary)
                 }
@@ -288,7 +288,7 @@ private struct NoteRow: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         // A bare note with nothing written is not worth keeping.
         if text.isEmpty, annotation.kind == .note { reader.remove(annotation.id); return }
-        if text != annotation.note { reader.update(annotation.id) { $0.note = text } }
+        if text != annotation.note { reader.update(annotation.id, .note(text)) }
     }
 
     private func copy() {

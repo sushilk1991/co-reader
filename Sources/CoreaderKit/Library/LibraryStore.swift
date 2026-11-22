@@ -192,6 +192,19 @@ public struct LibraryStore: Sendable {
         return entry
     }
 
+    /// Writes a cover image into a book folder and returns its file name, removing the
+    /// previous cover file when its name differs. Does not touch `book.json`: callers
+    /// that hold newer metadata in memory record the new name themselves.
+    public func writeCoverFile(_ data: Data, fileExtension: String, in folder: URL, replacing old: String?) throws -> String {
+        var ext = fileExtension.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        if ext == "jpeg" { ext = "jpg" }
+        if ext.isEmpty { ext = "jpg" }
+        let fileName = "cover.\(ext)"
+        try AtomicFile.write(data, to: folder.appendingPathComponent(fileName))
+        if let old, old != fileName { try? FileManager.default.removeItem(at: folder.appendingPathComponent(old)) }
+        return fileName
+    }
+
     public func delete(id: String) throws {
         try delete(id: id, toTrash: true)
     }
@@ -201,8 +214,13 @@ public struct LibraryStore: Sendable {
     func delete(id: String, toTrash: Bool) throws {
         guard let entry = try entry(id: id) else { throw LibraryError.bookNotFound(id) }
         let fm = FileManager.default
-        if toTrash, (try? fm.trashItem(at: entry.folder, resultingItemURL: nil)) != nil { return }
-        try fm.removeItem(at: entry.folder)
+        // No fallback to deleting outright: the folder holds the only copy of the notes,
+        // so if the Trash refuses it, the book stays and the caller is told.
+        if toTrash {
+            try fm.trashItem(at: entry.folder, resultingItemURL: nil)
+        } else {
+            try fm.removeItem(at: entry.folder)
+        }
     }
 
     // MARK: - Helpers

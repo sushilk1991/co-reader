@@ -57,8 +57,15 @@ struct CoreaderApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor weak var app: AppModel?
 
-    func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { app?.reader?.close() }
+    /// Quitting waits for queued note and metadata writes: a note typed a second before
+    /// ⌘Q must reach the file.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task { @MainActor in
+            app?.reader?.close()
+            await WriteQueue.shared.drain()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

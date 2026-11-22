@@ -105,3 +105,10 @@ extension Book {
         }
     }
 }
+
+extension Double {
+    /// Whole percent of a 0...1 value, safe for NaN and infinity (which `Int(_:)` traps on).
+    var percent: Int { isFinite ? Int((Swift.min(Swift.max(self, 0), 1) * 100).rounded()) : 0 }
+    /// Whole minutes of a number of seconds, safe for NaN and infinity.
+    var minutes: Int { isFinite ? Int(Swift.max(self, 0) / 60) : 0 }
+}

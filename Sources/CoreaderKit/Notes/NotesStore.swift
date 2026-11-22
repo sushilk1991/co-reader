@@ -39,6 +39,18 @@ public struct NotesStore: Sendable {
         try write(document, for: entry)
     }
 
+    /// Applies a change to the annotation as it is in the file right now, not to a copy
+    /// loaded earlier: text edited in another app since the book was opened is kept.
+    /// Returns the annotation as written, or nil when it is no longer in the file.
+    @discardableResult
+    public func update(id: String, in entry: BookEntry, _ change: (inout Annotation) -> Void) throws -> Annotation? {
+        var document = try document(for: entry)
+        guard let index = document.annotations.firstIndex(where: { $0.id == id }) else { return nil }
+        change(&document.annotations[index])
+        try write(document, for: entry)
+        return document.annotations[index]
+    }
+
     /// Removes the annotation. Its asset file, if any, stays in `assets/`: the user's
     /// own text may still point at it.
     public func remove(id: String, from entry: BookEntry) throws {

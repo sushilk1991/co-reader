@@ -77,7 +77,11 @@ const css = s => `
 
 // A saved web article is one XHTML-ish file: present it to foliate as a one-section book.
 const makeArticle = async blob => {
-    const html = await blob.text()
+    // Headings get ids before the file is turned into the rendered document, so the
+    // contents list points at ids that exist in what is on screen.
+    const source = new DOMParser().parseFromString(await blob.text(), 'text/html')
+    Array.from(source.querySelectorAll('h2')).slice(0, 60).forEach((h, i) => { if (!h.id) h.id = `coreader-h-${i}` })
+    const html = '<!DOCTYPE html>' + source.documentElement.outerHTML
     const parse = () => new DOMParser().parseFromString(html, 'text/html')
     const doc = parse()
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
@@ -85,10 +89,8 @@ const makeArticle = async blob => {
     return {
         sections: [{ id: 0, load: () => url, createDocument: parse, size: html.length, linear: 'yes' }],
         dir: 'ltr',
-        toc: Array.from(doc.querySelectorAll('article h2, body h2')).slice(0, 60).map((h, i) => {
-            if (!h.id) h.id = `coreader-h-${i}`
-            return { label: h.textContent.trim(), href: `#${h.id}` }
-        }),
+        toc: Array.from(doc.querySelectorAll('h2[id]')).slice(0, 60)
+            .map(h => ({ label: h.textContent.trim(), href: `#${h.id}` })),
         metadata: { title: doc.title, author: meta('author'), language: doc.documentElement.lang || 'en' },
         resolveHref: href => ({ index: 0, anchor: d => d.getElementById(href.replace(/^#/, '')) ?? d.body }),
         splitTOCHref: href => [0, href.replace(/^#/, '')],
@@ -102,7 +104,9 @@ class Reader {
     annotations = new Map()      // cfi -> { id, value, color, hasNote }
     byID = new Map()             // id -> cfi
     settings = null
-    #docs = new Map()            // section index -> Document
+    // Documents on screen right now. Asked of the renderer each time: keeping our own
+    // list would hold every chapter visited in memory until the book closes.
+    #liveDocs() { return (this.view?.renderer?.getContents?.() ?? []).map(c => c.doc).filter(Boolean) }
     #selectionTimer = null
 
     async open(url, options = {}) {
@@ -177,7 +181,7 @@ class Reader {
         try { this.view.close() } catch { /* already closed */ }
         this.view.remove()
         this.view = null
-        this.annotations.clear(); this.byID.clear(); this.#docs.clear()
+        this.annotations.clear(); this.byID.clear()
     }
 
     #remember(a) {
@@ -188,7 +192,6 @@ class Reader {
     }
 
     #onLoad({ doc, index }) {
-        this.#docs.set(index, doc)
         doc.addEventListener('selectionchange', () => {
             clearTimeout(this.#selectionTimer)
             this.#selectionTimer = setTimeout(() => this.#reportSelection(doc, index), 120)
@@ -344,7 +347,7 @@ class Reader {
     }
 
     clearSelection() {
-        for (const doc of this.#docs.values()) doc.getSelection()?.removeAllRanges()
+        for (const doc of this.#liveDocs()) doc.getSelection()?.removeAllRanges()
         post('selectionCleared')
     }
 
@@ -400,7 +403,7 @@ class Reader {
 
     // Dim everything except the paragraph being read (focus mode).
     setFocusParagraph(on) {
-        for (const doc of this.#docs.values()) doc.documentElement.classList.toggle('coreader-focus', !!on)
+        for (const doc of this.#liveDocs()) doc.documentElement.classList.toggle('coreader-focus', !!on)
     }
 }
 

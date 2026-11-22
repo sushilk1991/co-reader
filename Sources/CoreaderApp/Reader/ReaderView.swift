@@ -171,7 +171,7 @@ private struct ReaderFooter: View {
             .frame(height: 20)
             .accessibilityElement()
             .accessibilityLabel("Position in book")
-            .accessibilityValue("\(Int(reader.fraction * 100)) percent")
+            .accessibilityValue("\(reader.fraction.percent) percent")
 
             Text(trailing)
                 .font(Typo.ui(11).monospacedDigit())
@@ -184,7 +184,7 @@ private struct ReaderFooter: View {
     }
 
     private var trailing: String {
-        let percent = "\(Int((reader.fraction * 100).rounded()))%"
+        let percent = "\(reader.fraction.percent)%"
         let book = reader.book
         guard book.secondsRead > 600, reader.fraction > 0.05, reader.fraction < 0.985 else { return percent }
         let left = book.secondsRead / reader.fraction * (1 - reader.fraction)
