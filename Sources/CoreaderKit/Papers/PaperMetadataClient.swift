@@ -154,7 +154,10 @@ public struct PaperMetadataClient: Sendable {
             } else {
                 preprint = try await attempt { try await searchArxiv(query) }
             }
-            if let preprint {
+            // A title alone does not identify a paper: famous titles are reused (a 2021
+            // tutorial is also called "Long Short-Term Memory"). A preprint found by title
+            // may only fill in a record whose authors it shares.
+            if let preprint, paper == nil || paper?.arxivID != nil || Self.shareAnAuthor(paper?.authors ?? [], preprint.authors) {
                 var combined = paper ?? preprint
                 combined.abstract = preprint.abstract
                 combined.arxivID = combined.arxivID ?? preprint.arxivID
@@ -165,6 +168,19 @@ public struct PaperMetadataClient: Sendable {
         }
         if paper == nil, !answered, let failure { throw failure }
         return paper
+    }
+
+    /// True when the two author lists have a family name in common. Names are compared
+    /// by their last word, lowercased and without diacritics ("S. Hochreiter" matches
+    /// "Sepp Hochreiter").
+    static func shareAnAuthor(_ a: [String], _ b: [String]) -> Bool {
+        func families(_ names: [String]) -> Set<String> {
+            Set(names.compactMap { name in
+                name.split(whereSeparator: { $0 == " " || $0 == "," }).last
+                    .map { String($0).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased() }
+            }.filter { $0.count > 1 })
+        }
+        return !families(a).isDisjoint(with: families(b))
     }
 
     /// Accepts an arXiv abs/pdf link, a bare arXiv id, a DOI or a doi.org link.

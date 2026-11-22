@@ -30,7 +30,7 @@ case "${1:-}" in
     stop
     sleep 0.5
     : > "$STATE/debug.log"; : > "$STATE/commands"
-    APP=$(ls -d "$ROOT"/build/DerivedData/*/Build/Products/Debug/Coreader.app | head -1)
+    APP="${COREADER_APP:-$(ls -d "$ROOT"/build/DerivedData/*/Build/Products/Debug/Coreader.app | head -1)}"
     # Run the binary directly: it stays in the background and never takes focus.
     env COREADER_OFFSCREEN=1 "COREADER_DEBUG_LOG=$STATE/debug.log" "COREADER_COMMANDS=$STATE/commands" "$@" \
       nohup "$APP/Contents/MacOS/Coreader" >/dev/null 2>&1 &

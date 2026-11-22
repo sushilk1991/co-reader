@@ -533,3 +533,98 @@ struct AppearancePopover: View {
         .background(palette.raised)
     }
 }
+
+// MARK: - Citation
+
+/// Shown when a citation in a paper is clicked: the cited work, without leaving the page.
+struct CitationCard: View {
+    let reader: ReaderModel
+    let lookup: CitationLookup
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Cited work").labelStyle(palette)
+                Spacer()
+                Button { reader.citation = nil } label: {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(palette.tertiary)
+                        .frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
+            }
+            if let paper = lookup.paper {
+                Text(paper.title).font(Typo.display(15)).foregroundStyle(palette.ink).fixedSize(horizontal: false, vertical: true)
+                Text(([paper.authors.count > 3 ? "\(paper.authors[0]) et al." : paper.authors.joined(separator: ", ")] + [paper.year.map(String.init), paper.venue].compactMap { $0 })
+                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(Typo.ui(11.5)).foregroundStyle(palette.secondary).lineLimit(2)
+                if let abstract = paper.abstract, !abstract.isEmpty {
+                    ScrollView {
+                        Text(abstract).font(Typo.serif(13)).lineSpacing(3).foregroundStyle(palette.ink)
+                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 170)
+                }
+                HStack(spacing: 14) {
+                    if paper.arxivID != nil || paper.doi != nil {
+                        Button("Add to library") { reader.addCitedPaper() }
+                    }
+                    if let url = paper.landingURL {
+                        Button("Open page") { NSWorkspace.shared.open(url) }
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(Typo.ui(12, weight: .medium))
+                .foregroundStyle(palette.accent)
+            } else {
+                Text(lookup.entry).font(Typo.serif(13)).lineSpacing(3).foregroundStyle(palette.ink)
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                if lookup.isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Looking up the paper…").font(Typo.ui(12)).foregroundStyle(palette.secondary)
+                    }
+                } else {
+                    Text("No matching paper was found online.").font(Typo.ui(12)).foregroundStyle(palette.tertiary)
+                }
+            }
+        }
+        .padding(14)
+        .background(palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.rule, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+    }
+}
+
+/// Offered when a book is reopened after some days away.
+struct WelcomeBackCard: View {
+    let reader: ReaderModel
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Welcome back").font(Typo.display(15)).foregroundStyle(palette.ink)
+                Text("It has been a while. Want a recap of the story so far?").font(Typo.ui(12)).foregroundStyle(palette.secondary)
+            }
+            Button { reader.recap() } label: {
+                Text("Recap")
+                    .font(Typo.ui(12.5, weight: .semibold)).foregroundStyle(palette.page)
+                    .padding(.horizontal, 14).frame(height: 30)
+                    .background(palette.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            Button { withAnimation { reader.showsWelcomeBack = false } } label: {
+                Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(palette.tertiary)
+                    .frame(width: 22, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .background(palette.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(palette.rule, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+    }
+}

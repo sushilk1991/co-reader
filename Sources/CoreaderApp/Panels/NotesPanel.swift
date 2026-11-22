@@ -49,6 +49,7 @@ struct NotesPanel: View {
                     .padding(.bottom, 24)
                 }
             }
+            if !reader.echoes.isEmpty { echoes }
         }
         .background(palette.surface)
     }
@@ -111,6 +112,33 @@ struct NotesPanel: View {
         .padding(.top, 14)
         .padding(.bottom, 12)
         .overlay(alignment: .bottom) { Rectangle().fill(palette.rule.opacity(0.7)).frame(height: 0.5) }
+    }
+
+    /// Highlights from other books that resemble the page in view.
+    private var echoes: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("This page echoes").labelStyle(palette)
+            ForEach(reader.echoes) { match in
+                Button {
+                    app.open(match.book.id, at: .annotation(bookID: match.book.id, annotationID: match.annotation.id))
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(match.annotation.quote)
+                            .font(Typo.serif(12.5)).foregroundStyle(palette.ink)
+                            .lineLimit(3).multilineTextAlignment(.leading)
+                        Text(match.book.title).font(Typo.ui(10.5, weight: .medium)).foregroundStyle(palette.tertiary).lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Open this highlight in its book")
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(palette.raised)
+        .overlay(alignment: .top) { Rectangle().fill(palette.rule.opacity(0.7)).frame(height: 0.5) }
     }
 
     private var empty: some View {

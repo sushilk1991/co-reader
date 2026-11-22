@@ -15,6 +15,8 @@ enum PDFReaderEvent {
     case contextMenu(point: CGPoint, hasSelection: Bool)
     case tap
     case link(URL)
+    /// A citation in the text was clicked: the bibliography entry it points to.
+    case citation(entry: String, rect: CGRect)
 }
 
 /// PDF reading on PDFKit. Highlights are drawn as annotations in memory only: the PDF
@@ -42,6 +44,51 @@ final class PDFReaderController: NSObject {
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: view)
         center.addObserver(self, selector: #selector(selectionChanged), name: .PDFViewSelectionChanged, object: view)
+        // PDFView hands mouse events to private subviews, so overriding them on a subclass
+        // sees nothing. A local monitor sees every click before the view does.
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown]) { [weak self] event in
+            // Monitors run on the main thread; the event never leaves it.
+            nonisolated(unsafe) let event = event
+            let swallow = MainActor.assumeIsolated { self?.intercept(event) == false }
+            return swallow ? nil : event
+        }
+    }
+
+    private var monitor: Any?
+    private var downPoint: CGPoint?
+
+    /// Must be called when the book closes: the monitor would otherwise outlive the view.
+    func dispose() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// Returns false when the event was handled here and must not reach the view.
+    private func intercept(_ event: NSEvent) -> Bool {
+        guard let window = view.window, event.window === window,
+              let hit = window.contentView?.hitTest(event.locationInWindow), hit === view || hit.isDescendant(of: view) else { return true }
+        let point = view.convert(event.locationInWindow, from: nil)
+        switch event.type {
+        case .leftMouseDown:
+            downPoint = point
+            if event.clickCount == 1, !event.modifierFlags.contains(.command), citation(at: point) {
+                downPoint = nil
+                return false
+            }
+        case .leftMouseUp:
+            // A click, not a drag-selection.
+            if let down = downPoint, hypot(point.x - down.x, point.y - down.y) < 3, (view.currentSelection?.string ?? "").isEmpty {
+                clicked(at: point)
+            }
+            downPoint = nil
+        case .rightMouseDown:
+            contextMenu(at: point)
+            return false
+        default:
+            break
+        }
+        return true
     }
 
     // MARK: Opening
@@ -302,7 +349,7 @@ final class PDFReaderController: NSObject {
 
     // MARK: From the view
 
-    fileprivate func clicked(at point: CGPoint) {
+    private func clicked(at point: CGPoint) {
         guard let page = view.page(for: point, nearest: false) else { return onEvent(.tap) }
         let pagePoint = view.convert(point, to: page)
         if let hit = page.annotation(at: pagePoint), let id = hit.userName, marks[id] != nil {
@@ -313,7 +360,41 @@ final class PDFReaderController: NSObject {
         }
     }
 
-    fileprivate func contextMenu(at point: CGPoint) {
+    /// If the click landed on an in-document link that leads to a bibliography entry,
+    /// reports that entry instead of jumping away from the page being read.
+    private func citation(at point: CGPoint) -> Bool {
+        guard let page = view.page(for: point, nearest: false) else { return false }
+        let pagePoint = view.convert(point, to: page)
+        guard let link = page.annotations.first(where: { $0.type == "Link" && $0.bounds.insetBy(dx: -1, dy: -1).contains(pagePoint) }),
+              let destination = link.destination ?? (link.action as? PDFActionGoTo)?.destination,
+              let target = destination.page else { return false }
+        // The text just below the link's landing point is the entry.
+        let width = target.bounds(for: .cropBox).width
+        let top = destination.point.y > 100_000 ? target.bounds(for: .cropBox).maxY : destination.point.y
+        let area = CGRect(x: 0, y: top - 150, width: width, height: 153)
+        guard let raw = target.selection(for: area)?.string else { return false }
+        let text = raw.replacingOccurrences(of: "-\n", with: "").collapsingWhitespace
+        // Only bibliography entries: the first "[12] ..." or "12. ..." at the landing
+        // point, up to the next entry. Links to sections, figures and equations keep
+        // their normal behaviour. The selection can include the tail of the entry above.
+        var entry: String
+        if let match = text.firstMatch(of: /\[(\d{1,3})\]\s+/) {
+            entry = String(text[match.range.upperBound...])
+            if let next = entry.firstMatch(of: /\s\[\d{1,3}\]\s/) { entry = String(entry[..<next.range.lowerBound]) }
+        } else if let match = text.firstMatch(of: /(?:^|\s)(\d{1,3})\.\s+(?=\p{Lu})/), let number = Int(match.1) {
+            entry = String(text[match.range.upperBound...])
+            if let next = entry.range(of: " \(number + 1). ") { entry = String(entry[..<next.lowerBound]) }
+        } else {
+            return false
+        }
+        guard entry.count > 20 else { return false }
+        let b = view.convert(link.bounds, from: page)
+        onEvent(.citation(entry: entry.trimmingCharacters(in: .whitespaces),
+                          rect: CGRect(x: b.minX, y: view.bounds.height - b.maxY, width: b.width, height: b.height)))
+        return true
+    }
+
+    private func contextMenu(at point: CGPoint) {
         let hasSelection = !(view.currentSelection?.string ?? "").isEmpty
         if hasSelection { reportSelection() }
         onEvent(.contextMenu(point: CGPoint(x: point.x, y: view.bounds.height - point.y), hasSelection: hasSelection))
@@ -322,27 +403,6 @@ final class PDFReaderController: NSObject {
 
 final class ReaderPDFView: PDFView {
     weak var controller: PDFReaderController?
-    private var downPoint: CGPoint?
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        controller?.contextMenu(at: convert(event.locationInWindow, from: nil))
-        return nil
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        downPoint = convert(event.locationInWindow, from: nil)
-        super.mouseDown(with: event)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        super.mouseUp(with: event)
-        let point = convert(event.locationInWindow, from: nil)
-        // A click, not a drag-selection.
-        if let down = downPoint, hypot(point.x - down.x, point.y - down.y) < 3, (currentSelection?.string ?? "").isEmpty {
-            controller?.clicked(at: point)
-        }
-        downPoint = nil
-    }
 
     override func keyDown(with event: NSEvent) {
         guard displayMode == .singlePage || displayMode == .twoUp,

@@ -293,3 +293,10 @@ func livePaperLookups() async throws {
                               arxivID: "2001.00001", pdfURL: URL(string: "https://a/b.pdf"), landingURL: URL(string: "https://a/b"))
     #expect(try JSONDecoder().decode(PaperMetadata.self, from: JSONEncoder().encode(paper)) == paper)
 }
+
+@Test func preprintFoundByTitleMustShareAnAuthor() {
+    #expect(PaperMetadataClient.shareAnAuthor(["S. Hochreiter", "J. Schmidhuber"], ["Sepp Hochreiter", "Jürgen Schmidhuber"]))
+    #expect(PaperMetadataClient.shareAnAuthor(["Łukasz Kaiser"], ["Lukasz Kaiser"]))
+    #expect(!PaperMetadataClient.shareAnAuthor(["S. Hochreiter", "J. Schmidhuber"], ["Christian Bakke Vennerød", "Adrian Kjærran"]))
+    #expect(!PaperMetadataClient.shareAnAuthor([], ["Anyone Else"]))
+}

@@ -123,7 +123,8 @@ enum DebugHooks {
         guard let (window, point) = target(x, y),
               let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1) else { return }
-        window.sendEvent(event)
+        // Through the application, as real events travel, so event monitors see them.
+        NSApp.sendEvent(event)
     }
 
     /// `click x y`, `dclick x y`, `rclick x y`, `drag x1 y1 x2 y2`, `move x y`, `type text`,

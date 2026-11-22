@@ -260,6 +260,20 @@ private struct ReadingArea: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 }
 
+                if let lookup = reader.citation {
+                    CitationCard(reader: reader, lookup: lookup)
+                        .floating(near: lookup.rect, in: geo.size, size: CGSize(width: 380, height: 260), prefersBelow: true)
+                        .id(lookup.id)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+
+                if reader.showsWelcomeBack, !reader.isLoading {
+                    WelcomeBackCard(reader: reader)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 26)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
                 if reader.isSnipping {
                     SnipOverlay { rect, copy in reader.snip(rect, copyToClipboard: copy) } onCancel: { reader.isSnipping = false }
                 }
@@ -273,7 +287,7 @@ private struct ReadingArea: View {
 
                 if reader.isFocusMode, !reader.isChromeVisible {
                     // A way back that does not rely on knowing the shortcut.
-                    FocusExit { reader.toggleFocus() }
+                    FocusExit(since: reader.openedAt) { reader.toggleFocus() }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                         .padding(14)
                 }
@@ -287,18 +301,28 @@ private struct ReadingArea: View {
 }
 
 private struct FocusExit: View {
+    let since: Date
     let action: () -> Void
     @Environment(\.palette) private var palette
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "arrow.down.right.and.arrow.up.left")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(palette.secondary)
-                .frame(width: 28, height: 28)
-                .background(palette.raised, in: Circle())
-                .overlay(Circle().strokeBorder(palette.rule, lineWidth: 0.5))
+            HStack(spacing: 6) {
+                // Minutes in this sitting: enough to notice time, too coarse to nag.
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Text("\(max(0, Int(context.date.timeIntervalSince(since) / 60))) min")
+                        .font(Typo.ui(11).monospacedDigit())
+                        .foregroundStyle(palette.secondary)
+                }
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(palette.secondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(palette.raised, in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.rule, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .opacity(hovering ? 1 : 0.25)

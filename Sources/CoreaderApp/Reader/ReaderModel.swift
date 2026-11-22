@@ -30,6 +30,15 @@ struct Glance: Identifiable, Equatable {
     var failed = false
 }
 
+/// A citation the reader clicked in a paper, with the cited work once it is found.
+struct CitationLookup: Identifiable, Equatable {
+    let id = UUID()
+    var entry: String
+    var rect: CGRect
+    var paper: PaperMetadata?
+    var isLoading = true
+}
+
 struct SearchHit: Identifiable {
     let id = UUID()
     var locator: Locator
@@ -64,11 +73,19 @@ final class ReaderModel {
 
     var selection: ReaderSelection?
     var glance: Glance?
+    var citation: CitationLookup?
+    /// Highlights from other books that resemble the page in view.
+    var echoes: [RelatedFinder.Match] = []
+    var showsWelcomeBack = false
+    let openedAt = Date()
     /// Annotation whose note is being edited in the popover on the page.
     var activeAnnotation: ActiveAnnotation?
 
     var panel: ReaderPanel? {
-        didSet { UserDefaults.standard.set(panel?.rawValue, forKey: "reader.panel") }
+        didSet {
+            UserDefaults.standard.set(panel?.rawValue, forKey: "reader.panel")
+            if panel == .notes { refreshEchoes() }
+        }
     }
     var showsContents = false
     var showsAppearance = false
@@ -126,6 +143,11 @@ final class ReaderModel {
     // MARK: Opening
 
     private func start() {
+        // Back after a few days away: offer a recap before reading on.
+        if let last = entry.book.lastOpenedAt, Date().timeIntervalSince(last) > 3 * 86_400,
+           entry.book.progress > 0.05, entry.book.progress < 0.97 {
+            showsWelcomeBack = true
+        }
         app.update(entry.id) { book in
             book.lastOpenedAt = Date()
             if book.status == .toRead { book.status = .reading }
@@ -172,6 +194,7 @@ final class ReaderModel {
         saveTask?.cancel()
         persistLocation()
         chat.stop()
+        pdf?.dispose()
     }
 
     func settingsChanged() {
@@ -273,6 +296,71 @@ final class ReaderModel {
             if activeAnnotation != nil || glance != nil { activeAnnotation = nil; glance = nil }
         case .link(let url):
             if url.scheme == DeepLink.scheme { app.handle(url: url) } else { NSWorkspace.shared.open(url) }
+        case .citation(let entry, let rect):
+            lookUpCitation(entry, rect: rect)
+        }
+    }
+
+    // MARK: Citations
+
+    private func lookUpCitation(_ entry: String, rect: CGRect) {
+        selection = nil
+        glance = nil
+        activeAnnotation = nil
+        let lookup = CitationLookup(entry: entry, rect: rect)
+        citation = lookup
+        let parsed = ReferenceParser.parse(referencesText: "[1] " + entry).first
+        Task {
+            let client = PaperMetadataClient()
+            var paper: PaperMetadata?
+            if let id = parsed?.arxivID { paper = try? await client.lookup(arxivID: id) }
+            if paper == nil, let doi = parsed?.doi { paper = try? await client.lookup(doi: doi) }
+            if paper == nil, let title = parsed?.title, title.count > 10 { paper = try? await client.search(title: title) }
+            guard citation?.id == lookup.id else { return }
+            citation?.paper = paper
+            citation?.isLoading = false
+        }
+    }
+
+    func addCitedPaper() {
+        guard let paper = citation?.paper else { return }
+        let link = paper.arxivID ?? paper.doi ?? paper.landingURL?.absoluteString
+        citation = nil
+        if let link { app.importer.importLink(link) }
+    }
+
+    // MARK: Echoes
+
+    @ObservationIgnored private var echoTask: Task<Void, Never>?
+    @ObservationIgnored private var otherBooks: [GraphInput]?
+
+    /// Finds highlights in other books that resemble the visible page. Runs only while the
+    /// notes panel is open, a moment after the page settles.
+    func refreshEchoes() {
+        echoTask?.cancel()
+        guard panel == .notes, visibleText.count > 200 else { echoes = []; return }
+        let text = String(visibleText.prefix(1400)), bookID = entry.id
+        let library = app.library, notes = app.notes
+        let known = otherBooks
+        echoTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            struct Found: Sendable { var inputs: [GraphInput]; var matches: [RelatedFinder.Match] }
+            let found: Found? = try? await offMain {
+                var inputs = known
+                if inputs == nil {
+                    var byBook: [String: (Book, [Annotation])] = [:]
+                    for pair in try notes.all(in: library) where pair.entry.id != bookID && pair.annotation.kind == .highlight && pair.annotation.quote.count > 30 {
+                        byBook[pair.entry.id, default: (pair.entry.book, [])].1.append(pair.annotation)
+                    }
+                    inputs = byBook.values.map { GraphInput(book: $0.0, annotations: $0.1) }
+                }
+                let matches = RelatedFinder().related(to: text, among: inputs ?? [], excludingBookID: bookID, limit: 3, minimumScore: 0.55)
+                return Found(inputs: inputs ?? [], matches: matches)
+            }
+            guard !Task.isCancelled, let self, let found else { return }
+            self.otherBooks = found.inputs
+            self.echoes = found.matches
         }
     }
 
@@ -283,6 +371,8 @@ final class ReaderModel {
         self.pageLabel = pageLabel
         visibleText = visible
         activeAnnotation = nil
+        citation = nil
+        refreshEchoes()
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.2))
@@ -362,6 +452,7 @@ final class ReaderModel {
 
     func escape() {
         if isSnipping { isSnipping = false }
+        else if citation != nil { citation = nil }
         else if glance != nil { glance = nil }
         else if activeAnnotation != nil { activeAnnotation = nil }
         else if selection != nil { clearSelection() }
@@ -659,6 +750,12 @@ final class ReaderModel {
         highlight(lastColor, note: g.answer)
         glance = nil
         app.show("Saved to your notes.")
+    }
+
+    func recap() {
+        showsWelcomeBack = false
+        panel = .chat
+        if let preset = chat.presets.first(where: { $0.title == "Recap so far" }) { chat.run(preset) }
     }
 
     func finish(rating: Int?) {
