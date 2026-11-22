@@ -75,6 +75,28 @@ const css = s => `
     .coreader-focus-dim { opacity: 0.28; transition: opacity .25s ease; }
 `
 
+// A saved web article is one XHTML-ish file: present it to foliate as a one-section book.
+const makeArticle = async blob => {
+    const html = await blob.text()
+    const parse = () => new DOMParser().parseFromString(html, 'text/html')
+    const doc = parse()
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+    const meta = name => doc.querySelector(`meta[name="${name}"]`)?.content ?? ''
+    return {
+        sections: [{ id: 0, load: () => url, createDocument: parse, size: html.length, linear: 'yes' }],
+        dir: 'ltr',
+        toc: Array.from(doc.querySelectorAll('article h2, body h2')).slice(0, 60).map((h, i) => {
+            if (!h.id) h.id = `coreader-h-${i}`
+            return { label: h.textContent.trim(), href: `#${h.id}` }
+        }),
+        metadata: { title: doc.title, author: meta('author'), language: doc.documentElement.lang || 'en' },
+        resolveHref: href => ({ index: 0, anchor: d => d.getElementById(href.replace(/^#/, '')) ?? d.body }),
+        splitTOCHref: href => [0, href.replace(/^#/, '')],
+        getTOCFragment: (d, id) => d.getElementById(id) ?? d.documentElement,
+        isExternal: href => /^(https?|mailto):/i.test(href),
+    }
+}
+
 class Reader {
     view = null
     annotations = new Map()      // cfi -> { id, value, color, hasNote }
@@ -93,7 +115,8 @@ class Reader {
             const view = document.createElement('foliate-view')
             document.body.append(view)
             this.view = view
-            await view.open(file)
+            const isArticle = /\.html?$/i.test(options.fileName ?? '')
+            await view.open(isArticle ? await makeArticle(blob) : file)
             const { book } = view
 
             view.addEventListener('load', e => this.#onLoad(e.detail))

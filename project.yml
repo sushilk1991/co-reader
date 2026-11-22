@@ -32,9 +32,20 @@ targets:
       - path: Sources/CoreaderApp/Web
         type: folder
         buildPhase: resources
+      # The agent skill ships inside the app so Settings can install it.
+      - path: integrations/skill
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: Coreader
         product: CoreaderKit
+      # The `coreader` command rides inside the app (Contents/Helpers) and is linked
+      # into ~/.local/bin from Settings.
+      - target: coreader
+        embed: false
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
       - sdk: PDFKit.framework
       - sdk: WebKit.framework
     settings:
@@ -69,6 +80,21 @@ targets:
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             CFBundleTypeExtensions: [mobi, azw3, azw, prc]
+
+  coreader:
+    type: tool
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/coreader-cli
+    dependencies:
+      - package: Coreader
+        product: CoreaderKit
+    settings:
+      base:
+        PRODUCT_NAME: coreader
+        PRODUCT_BUNDLE_IDENTIFIER: com.sushil.coreader.cli
+        SKIP_INSTALL: YES
 
 schemes:
   Coreader:
