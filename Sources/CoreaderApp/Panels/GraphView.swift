@@ -64,6 +64,9 @@ struct GraphView: View {
         } ?? []
 
         return ZStack {
+            // Clicking empty space clears the selection. A layer of its own under the
+            // nodes, so it never competes with a click on a node.
+            Color.clear.contentShape(Rectangle()).onTapGesture { selected = nil }
             Canvas { context, _ in
                 for edge in graph.edges {
                     guard let a = point(edge.from), let b = point(edge.to) else { continue }
@@ -77,19 +80,19 @@ struct GraphView: View {
                                    style: StrokeStyle(lineWidth: edge.kind == .similar ? 1.2 : 0.6, dash: edge.kind == .similar ? [4, 3] : []))
                 }
             }
+            .allowsHitTesting(false)
             ForEach(graph.nodes) { node in
                 if let p = point(node.id) {
                     let dim = focus != nil && node.id != focus && !neighbours.contains(node.id)
-                    nodeView(node)
+                    Button { selected = selected == node.id ? nil : node.id } label: { nodeView(node) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(node.label)
                         .opacity(dim ? 0.2 : 1)
-                        .position(p)
                         .onHover { inside in hover = inside ? node.id : (hover == node.id ? nil : hover) }
-                        .onTapGesture { selected = selected == node.id ? nil : node.id }
+                        .position(p)
                 }
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture { selected = nil }
         .animation(.easeOut(duration: 0.15), value: focus)
     }
 

@@ -68,7 +68,9 @@ const css = s => `
     a:link, a:visited { color: ${s.accent}; text-decoration-thickness: 0.5px; text-underline-offset: 2px; }
     ::selection { background: ${s.selection}; }
     pre, code { white-space: pre-wrap !important; font-size: 0.86em; }
-    img, svg, video { max-width: 100%; ${s.dark ? 'filter: brightness(0.86);' : ''} }
+    img, svg, video { max-width: 100%; }
+    /* Engravings and diagrams come on white paper: let it take the page's tone. */
+    img { ${s.dark ? 'filter: brightness(0.86);' : 'mix-blend-mode: multiply;'} }
     hr { border: 0; border-top: 0.5px solid ${s.rule}; }
     h1, h2, h3, h4 { color: ${s.ink} !important; text-wrap: balance; }
     aside[epub|type~="endnote"], aside[epub|type~="footnote"], aside[epub|type~="note"], aside[epub|type~="rearnote"] { display: none; }

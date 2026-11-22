@@ -300,6 +300,12 @@ extension AppModel {
             let bits = arg.split(separator: "=", maxSplits: 1).map(String.init)
             if bits.count == 2, let e = books.first(where: { $0.book.title.localizedCaseInsensitiveContains(bits[0]) }), let s = ReadingStatus(rawValue: bits[1]) { setStatus(s, for: e.id) }
         case "onboard": hasOnboarded = arg != "reset"
+        case "skill":
+            if let e = books.first(where: { $0.book.title.localizedCaseInsensitiveContains(arg) }) {
+                makeSkill(from: e.id)
+                skillJob?.start(app: self)
+            }
+        case "skillstate": DebugHooks.log("skill phase=\(String(describing: skillJob?.phase)) activity=\(skillJob?.activity ?? "") log=\(skillJob?.log.suffix(3) ?? [])")
         case "dump":
             DebugHooks.log("books=\(books.count) route=\(route) agents=\(agents.map(\.kind.rawValue)) reader.loading=\(String(describing: reader?.isLoading)) annotations=\(reader?.annotations.count ?? -1) fraction=\(reader?.fraction ?? -1) chat=\(reader?.chat.messages.last?.text.prefix(300) ?? "")")
         default: DebugHooks.log("unknown command: \(line)")
