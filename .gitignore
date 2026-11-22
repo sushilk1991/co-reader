@@ -2,7 +2,7 @@
 .DS_Store
 .know
 .venv-imagegen
-agents/
+/agents/
 build
 DerivedData
 dist

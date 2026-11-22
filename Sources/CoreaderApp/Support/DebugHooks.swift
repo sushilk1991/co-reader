@@ -15,26 +15,39 @@ enum DebugHooks {
     private static var offset = 0
     private static var parked: Set<Int> = []
 
-    /// Captures the app's own main window. A process may always image its own windows, so
-    /// this works without the Screen Recording permission. The function is hidden from the
-    /// current SDK, hence the dynamic lookup.
+    /// Captures the app's main window with its sheets and popovers by asking the views to
+    /// draw themselves. Nothing is read from the screen, so it needs no Screen Recording
+    /// permission and works while the screen is locked.
     static func snapshot(to path: String) {
-        typealias Fn = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
-        guard let window = NSApp.windows.filter({ $0.styleMask.contains(.titled) && $0.isVisible }).max(by: { $0.frame.width < $1.frame.width }),
-              let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return log("shot: no window") }
-        let create = unsafeBitCast(symbol, to: Fn.self)
-        // .optionIncludingWindow = 1 << 3; .boundsIgnoreFraming = 1 << 0
-        guard let image = create(.null, 1 << 3, UInt32(window.windowNumber), 1 << 0)?.takeRetainedValue() else { return log("shot: capture failed") }
-        let width = image.width, height = image.height
+        let visible = NSApp.windows.filter { $0.isVisible && $0.frame.width > 40 }
+        guard let window = visible.filter({ $0.styleMask.contains(.titled) && $0.sheetParent == nil })
+            .max(by: { $0.frame.width < $1.frame.width }) else { return log("shot: no window") }
+        let width = Int(window.frame.width), height = Int(window.frame.height)
         func context(_ w: Int, _ h: Int) -> CGContext {
             CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                       space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         }
+        func render(_ w: NSWindow) -> CGImage? {
+            guard let view = w.contentView?.superview ?? w.contentView,
+                  let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            return rep.cgImage
+        }
         let base = context(width, height)
-        base.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        if let image = render(window) { base.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height)) }
+        // Sheets and popovers are windows of their own; they go on top once web content is in.
+        let overlays = visible.filter { $0 !== window }.sorted { $0.orderedIndex > $1.orderedIndex }
+        func drawOverlays() {
+            for w in overlays {
+                guard let image = render(w) else { continue }
+                base.draw(image, in: CGRect(x: w.frame.minX - window.frame.minX, y: w.frame.minY - window.frame.minY,
+                                            width: w.frame.width, height: w.frame.height))
+            }
+        }
         func find(_ v: NSView) -> [WKWebView] { (v as? WKWebView).map { [$0] } ?? v.subviews.flatMap(find) }
         let webs = find(window.contentView!).filter { !$0.isHiddenOrHasHiddenAncestor && $0.frame.width > 1 }
         func finish() {
+            drawOverlays()
             if let out = base.makeImage() {
                 try? NSBitmapImageRep(cgImage: out).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
             }
