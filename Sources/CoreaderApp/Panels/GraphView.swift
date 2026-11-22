@@ -225,7 +225,7 @@ struct GraphView: View {
             var positions: [String: CGPoint]
             var cards: [String: ReviewModel.Card]
         }
-        let built: Built? = try? await background {
+        let built: Built? = try? await offMain {
             let all = try notes.all(in: library)
             var byBook: [String: (BookEntry, [Annotation])] = [:]
             var cards: [String: ReviewModel.Card] = [:]

@@ -3,7 +3,7 @@ import CoreaderKit
 import SwiftUI
 
 /// Runs blocking library work off the main actor.
-func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+func offMain<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
     try await Task.detached(priority: .userInitiated) { try work() }.value
 }
 
@@ -88,7 +88,7 @@ final class AppModel {
     func start() async {
         let library = library
         do {
-            books = try await background {
+            books = try await offMain {
                 try library.prepare()
                 return try library.allBooks()
             }
@@ -115,7 +115,7 @@ final class AppModel {
 
     func reloadBooks() async {
         let library = library
-        if let all = try? await background({ try library.allBooks() }) { books = all }
+        if let all = try? await offMain({ try library.allBooks() }) { books = all }
     }
 
     /// Moves the library to another folder (onboarding and Settings). Existing books are
@@ -149,7 +149,7 @@ final class AppModel {
         let entry = books[index]
         let library = library
         Task {
-            do { try await background { try library.save(entry.book, in: entry.folder) } }
+            do { try await offMain { try library.save(entry.book, in: entry.folder) } }
             catch { show("Could not save changes to “\(entry.book.title)”.", isError: true) }
         }
     }
@@ -180,7 +180,7 @@ final class AppModel {
         books.removeAll { $0.id == id }
         let library = library
         Task {
-            do { try await background { try library.delete(id: id) } }
+            do { try await offMain { try library.delete(id: id) } }
             catch { show("Could not remove “\(entry.book.title)”.", isError: true) }
             show("Moved “\(entry.book.title)” to the Trash.")
         }

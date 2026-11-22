@@ -32,7 +32,7 @@ final class ReviewModel {
                 var state: ReviewState
                 var log: ReadingLog
             }
-            let loaded: Loaded? = try? await background {
+            let loaded: Loaded? = try? await offMain {
                 let pairs = try notes.all(in: library).map { Card(entry: $0.entry, annotation: $0.annotation) }
                 return Loaded(pairs: pairs, state: ReviewStore(libraryRoot: root).load(), log: ReadingLogStore(libraryRoot: root).load())
             }
@@ -64,7 +64,7 @@ final class ReviewModel {
         ReviewScheduler().record(grade, for: card.id, in: &state, now: Date())
         due.removeAll { $0.id == card.id }
         let state = state, root = libraryRoot
-        Task { try? await background { try ReviewStore(libraryRoot: root).save(state) } }
+        Task { try? await offMain { try ReviewStore(libraryRoot: root).save(state) } }
     }
 
     func recordReading(seconds: Double, bookID: String) {
@@ -75,6 +75,6 @@ final class ReviewModel {
         guard unsavedSeconds >= 60 else { return }
         unsavedSeconds = 0
         let log = log, root = libraryRoot
-        Task { try? await background { try ReadingLogStore(libraryRoot: root).save(log) } }
+        Task { try? await offMain { try ReadingLogStore(libraryRoot: root).save(log) } }
     }
 }

@@ -133,7 +133,7 @@ final class ReaderModel {
         let notes = app.notes
         let entry = entry
         Task {
-            annotations = (try? await background { try notes.load(entry) }) ?? []
+            annotations = (try? await offMain { try notes.load(entry) }) ?? []
             openDocument()
         }
         clock = Task { [weak self] in
@@ -230,7 +230,7 @@ final class ReaderModel {
         case .textDone:
             let sections = textSections, book = book, store = app.textStore
             textSections = []
-            Task { try? await background { try store.save(sections, for: book) } }
+            Task { try? await offMain { try store.save(sections, for: book) } }
         case .searchResults(let hits):
             searchHits += hits.map { SearchHit(locator: Locator(cfi: $0.cfi), before: $0.pre, match: $0.match, after: $0.post, section: $0.section) }
         case .searchDone:
@@ -447,7 +447,7 @@ final class ReaderModel {
         pdf?.remove(id: id)
         let notes = app.notes, entry = entry
         Task {
-            do { try await background { try notes.remove(id: a.id, from: entry) } }
+            do { try await offMain { try notes.remove(id: a.id, from: entry) } }
             catch { app.show("Could not update the notes file.", isError: true) }
         }
     }
@@ -468,7 +468,7 @@ final class ReaderModel {
     private func save(_ a: Annotation) {
         let notes = app.notes, entry = entry
         Task {
-            do { try await background { try notes.upsert(a, in: entry) } }
+            do { try await offMain { try notes.upsert(a, in: entry) } }
             catch { app.show("Could not write to the notes file: \(error.localizedDescription)", isError: true) }
         }
     }
@@ -480,11 +480,11 @@ final class ReaderModel {
         let name = (caption.isEmpty ? "figure" : caption).prefix(40)
         Task {
             do {
-                let file = try await background { try notes.saveAsset(data, suggestedName: String(name), fileExtension: fileExtension, in: entry) }
+                let file = try await offMain { try notes.saveAsset(data, suggestedName: String(name), fileExtension: fileExtension, in: entry) }
                 let a = Annotation(kind: .image, quote: caption, locator: locator, chapter: chapter.isEmpty ? nil : chapter, asset: file)
                 annotations.append(a)
                 sortAnnotations()
-                try await background { try notes.upsert(a, in: entry) }
+                try await offMain { try notes.upsert(a, in: entry) }
                 if announce { app.show("Saved to your notes.") }
             } catch {
                 app.show("Could not save the image: \(error.localizedDescription)", isError: true)

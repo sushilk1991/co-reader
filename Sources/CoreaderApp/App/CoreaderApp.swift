@@ -3,51 +3,36 @@ import SwiftUI
 
 @main
 struct CoreaderApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var app = AppModel()
 
+    init() { DebugHooks.log("app init") }
+
     var body: some Scene {
-        Window("Coreader", id: "main") {
+        // A group, not a single Window: a single-window scene does not open when the app is
+        // launched in the background. "New Window" is removed below, so there is only one.
+        WindowGroup {
             RootView()
                 .environment(app)
                 .frame(minWidth: 940, minHeight: 620)
-                .onOpenURL { app.handle(url: $0) }
                 .task {
-                    delegate.app = app
                     DebugHooks.install { app.debug($0) }
                     await app.start()
                 }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1320, height: 860)
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("Add Books…") { app.importer.chooseFiles() }.keyboardShortcut("o", modifiers: .command)
-                Button("Add from Link…") { app.overlay = .addLink }.keyboardShortcut("o", modifiers: [.command, .shift])
-            }
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings…") { app.overlay = .settings }.keyboardShortcut(",", modifiers: .command)
-            }
-            CommandMenu("Reading") {
-                Button("Daily Review") { app.overlay = .review }.keyboardShortcut("r", modifiers: [.command, .shift])
-                Button("Notes Graph") { app.overlay = .graph }.keyboardShortcut("g", modifiers: [.command, .shift])
-                Divider()
-                Button("Next Page") { app.reader?.nextPage() }.keyboardShortcut(.rightArrow, modifiers: .command).disabled(app.reader == nil)
-                Button("Previous Page") { app.reader?.previousPage() }.keyboardShortcut(.leftArrow, modifiers: .command).disabled(app.reader == nil)
-                Divider()
-                Button("Bigger Text") { app.settings.fontSize = min(30, app.settings.fontSize + 1) }.keyboardShortcut("+", modifiers: .command)
-                Button("Smaller Text") { app.settings.fontSize = max(13, app.settings.fontSize - 1) }.keyboardShortcut("-", modifiers: .command)
-            }
-        }
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor weak var app: AppModel?
 
-    func application(_ application: NSApplication, open urls: [URL]) {
-        Task { @MainActor in
-            for url in urls { app?.handle(url: url) }
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            DebugHooks.log("launched windows=\(NSApp.windows.map { "\($0.className) visible=\($0.isVisible)" })")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                DebugHooks.log("later windows=\(NSApp.windows.map { "\($0.className) visible=\($0.isVisible) \($0.frame)" }) policy=\(NSApp.activationPolicy().rawValue)")
+            }
         }
     }
 

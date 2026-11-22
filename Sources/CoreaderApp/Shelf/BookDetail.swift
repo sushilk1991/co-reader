@@ -141,7 +141,7 @@ struct BookDetail: View {
             .background(palette.page)
             .task {
                 let store = app.notes
-                notes = (try? await background { try store.load(entry) }) ?? []
+                notes = (try? await offMain { try store.load(entry) }) ?? []
             }
         }
     }
