@@ -94,6 +94,9 @@ public struct Book: Codable, Sendable, Identifiable, Hashable {
     public var arxivID: String?
     /// Seconds spent with this book open and in focus.
     public var secondsRead: Double
+    /// Lowercase hex SHA-256 of the book file, so importing the same file twice finds
+    /// the existing book. Nil for books written before this field existed.
+    public var contentHash: String?
 
     public init(
         id: String = UUID().uuidString.lowercased(),
@@ -120,7 +123,8 @@ public struct Book: Codable, Sendable, Identifiable, Hashable {
         sourceURL: String? = nil,
         doi: String? = nil,
         arxivID: String? = nil,
-        secondsRead: Double = 0
+        secondsRead: Double = 0,
+        contentHash: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -147,6 +151,52 @@ public struct Book: Codable, Sendable, Identifiable, Hashable {
         self.doi = doi
         self.arxivID = arxivID
         self.secondsRead = secondsRead
+        self.contentHash = contentHash
+    }
+
+    /// Tolerant decoding: `book.json` is edited by other app versions, sync conflicts and
+    /// the occasional human, so only `id` and `fileName` are required and unknown enum
+    /// values fall back instead of making the whole book unreadable.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            ((try? c.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+        }
+        func optional<T: Decodable>(_ key: CodingKeys) -> T? {
+            (try? c.decodeIfPresent(T.self, forKey: key)) ?? nil
+        }
+        id = try c.decode(String.self, forKey: .id)
+        fileName = try c.decode(String.self, forKey: .fileName)
+        if let known: BookFormat = optional(.format) {
+            format = known
+        } else if let inferred = BookFormat(fileExtension: (fileName as NSString).pathExtension) {
+            format = inferred
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .format, in: c, debugDescription: "Unknown book format")
+        }
+        title = value(.title, "Untitled")
+        authors = value(.authors, [])
+        kind = value(.kind, format == .article ? .article : .book)
+        status = value(.status, .toRead)
+        rating = optional(.rating)
+        progress = value(.progress, 0)
+        location = optional(.location)
+        addedAt = value(.addedAt, Date(timeIntervalSince1970: 0))
+        lastOpenedAt = optional(.lastOpenedAt)
+        finishedAt = optional(.finishedAt)
+        tags = value(.tags, [])
+        coverFile = optional(.coverFile)
+        coverIsGenerated = value(.coverIsGenerated, false)
+        summary = optional(.summary)
+        publisher = optional(.publisher)
+        year = optional(.year)
+        language = optional(.language)
+        pageCount = optional(.pageCount)
+        sourceURL = optional(.sourceURL)
+        doi = optional(.doi)
+        arxivID = optional(.arxivID)
+        secondsRead = value(.secondsRead, 0)
+        contentHash = optional(.contentHash)
     }
 
     public var authorLine: String { authors.joined(separator: ", ") }
