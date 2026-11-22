@@ -1,48 +1,68 @@
-# CoReader
+# Coreader
 
-macOS 15+ SwiftUI reader. Not iOS. Product/UX: `PRODUCT_INTENT.md`.
+A reading app for Mac (iOS and iPad next): EPUB, PDF, MOBI/AZW3 and saved web articles,
+with highlights and notes kept as plain Markdown, and an AI side panel that drives the
+agent CLIs already on the machine (Claude Code, Codex, Antigravity).
 
-`Package.swift` and `project.yml` both compile `Sources/CoReaderApp` and
-`Tests/CoReaderAppTests`. SwiftPM runs unit tests. The `.app` is
-`CoReader.xcodeproj`, generated from `project.yml`.
+## Layout
+
+| Path | What |
+| --- | --- |
+| `Sources/CoreaderKit` | Platform-neutral core (models, library, notes, agents, papers, covers, review, graph). Foundation only: no AppKit, UIKit or SwiftUI, so iOS can reuse it. |
+| `Sources/coreader-cli` | `coreader` command for people and agents to query the library and notes. |
+| `Sources/CoreaderApp` | The macOS SwiftUI app. |
+| `Sources/CoreaderApp/Web` | The web reader (vendored foliate-js + `bridge.js`) shown in a `WKWebView` for every format except PDF. |
+| `Tests/CoreaderKitTests` | Swift Testing unit tests for the core. |
+| `integrations/` | Agent skill, Mastisk plugin, browser extension. |
 
 ## Commands
 
 ```bash
+swift build && swift test          # core + CLI
 xcodegen generate --spec project.yml
-swift test
-make test
-make build-and-run-background
+make build                         # the .app
+make build-and-run-background      # launch without taking focus
 ```
 
-Definition of done: `swift test` and `make test` both exit 0. Run the GUI only
-via `make build-and-run-background`, which launches the Debug `.app` through
-`scripts/run_app_macos.sh`.
+Rerun `xcodegen` after adding or removing files under `Sources/CoreaderApp`.
+
+## The library on disk (the contract everything shares)
+
+One folder, by default `iCloud Drive/Coreader` (falls back to `~/Documents/Coreader`
+when iCloud Drive is off). The chosen root is recorded in
+`~/Library/Application Support/Coreader/config.json` (`{"libraryRoot": "/abs/path"}`)
+so the app and the CLI agree.
+
+```
+Coreader/
+  README.md                 written by the app; explains this layout to agents
+  Books/<slug>/
+    book.json               metadata (Book): status, rating, progress, location...
+    notes.md                every highlight, note and saved image for this book
+    <slug>.<ext>            the book file itself
+    cover.jpg|png           cover (from the file, or generated)
+    assets/                 images saved or snipped from the book
+    chats/                  saved AI conversations, Markdown
+  review.json               spaced-repetition state for the daily review
+```
+
+Rules:
+
+- **Markdown is the only copy of the notes.** There is no notes database. Anything
+  derived (search index, embeddings, extracted book text) lives in
+  `~/Library/Caches/Coreader/` and can be deleted at any time.
+- Writes are atomic (write to a temp file, then replace) because iCloud and other
+  tools (Mastisk, Obsidian, agents) read the same files.
+- `book.json` uses ISO 8601 dates and pretty-printed, sorted keys so diffs and sync
+  conflicts stay readable.
+- Deep links (`coreader://open?book=<id>&a=<annotationID>`, `&page=<n>`, `&cfi=<cfi>`)
+  are how notes, agents and the CLI point back into a book. See `DeepLink`.
 
 ## Guardrails
 
-- Destination is `platform=macOS`. After adding a Swift file under
-  `Sources/CoReaderApp/` or `Tests/CoReaderAppTests/`, rerun
-  `xcodegen generate --spec project.yml` so the Xcode target lists it.
-- Keep `Package.swift` and `project.yml` version/deployment fields in
-  agreement when you bump them (Swift 6 language mode, macOS 15).
-- Tests are Swift Testing (`import Testing`, `@Test`), e.g.
-  `Tests/CoReaderAppTests/AppModelReaderStateTests.swift`.
-- Orchestration lives in `Sources/CoReaderApp/App/AppModel.swift`. Views
-  under `Features/` call that model; they do not open SQLite or HTTP
-  themselves. PDFKit's `PDFDocument(url:)` in the preview views is the one
-  existing exception.
-- Local providers only (Ollama, Claude CLI in `AIProviderKind`). Keep
-  `project.yml` `platform: macOS`.
-- Nothing blocking on the MainActor: PDFKit page walks and file reads go
-  through `Core/Concurrency/BlockingWork.swift` (cancellable, reports
-  progress); child processes go through `ShellCommand`, which always carries
-  a timeout. `PRODUCT_INTENT.md` "Current state" lists the defects this
-  prevents.
-
-## Maintaining this file
-
-Keep this file for knowledge useful to almost every future agent session in this project.
-Do not repeat what the codebase already shows; point to the authoritative file or command instead.
-Prefer rewriting or pruning existing entries over appending new ones.
-When updating this file, preserve this bar for all agents and keep entries concise.
+- Swift 6 language mode, strict concurrency. Nothing blocking on the main actor.
+- Child processes always carry a timeout and are killed when their task is cancelled.
+- Tests are Swift Testing (`import Testing`, `@Test`). No network and no real agent
+  CLIs in unit tests: inject fakes.
+- Comments explain non-obvious reasons and traps, not what the code says.
+- Keep this file short; point at code instead of repeating it.

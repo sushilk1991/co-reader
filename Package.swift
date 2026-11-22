@@ -1,33 +1,18 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
-    name: "CoReader",
-    platforms: [
-        .macOS(.v15)
-    ],
+    name: "Coreader",
+    platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
-        .executable(
-            name: "CoReaderApp",
-            targets: ["CoReaderApp"]
-        )
+        .library(name: "CoreaderKit", targets: ["CoreaderKit"]),
+        .executable(name: "coreader", targets: ["coreader-cli"]),
     ],
     targets: [
-        .executableTarget(
-            name: "CoReaderApp",
-            path: "Sources/CoReaderApp",
-            resources: [
-                .process("Resources")
-            ],
-            linkerSettings: [
-                .linkedLibrary("sqlite3"),
-                .linkedFramework("PDFKit")
-            ]
-        ),
-        .testTarget(
-            name: "CoReaderAppTests",
-            dependencies: ["CoReaderApp"],
-            path: "Tests/CoReaderAppTests"
-        )
+        // Platform-neutral core shared by the Mac app, the CLI and the future iOS app.
+        // No AppKit/UIKit/SwiftUI here.
+        .target(name: "CoreaderKit", path: "Sources/CoreaderKit"),
+        .executableTarget(name: "coreader-cli", dependencies: ["CoreaderKit"], path: "Sources/coreader-cli"),
+        .testTarget(name: "CoreaderKitTests", dependencies: ["CoreaderKit"], path: "Tests/CoreaderKitTests"),
     ]
 )
