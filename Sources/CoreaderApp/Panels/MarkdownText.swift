@@ -17,13 +17,58 @@ struct MarkdownText: View {
         case table([[String]])
     }
 
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             ForEach(Array(Self.blocks(text).enumerated()), id: \.offset) { _, block in
                 view(for: block)
+                jumps(for: block)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Links into a book, repeated as buttons under the passage that mentions them. A
+    /// link inside running text is a small target (and unreachable from the keyboard);
+    /// "go to this place" deserves a real control.
+    @ViewBuilder
+    private func jumps(for block: Block) -> some View {
+        let source: String = switch block {
+        case .paragraph(let s), .quote(let s), .heading(_, let s): s
+        case .bullet(_, _, let s): s
+        default: ""
+        }
+        let links = Self.bookLinks(in: source)
+        if !links.isEmpty {
+            FlowLayout(spacing: 6) {
+                ForEach(Array(links.enumerated()), id: \.offset) { _, link in
+                    Button { openURL(link.url) } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.turn.down.right").font(.system(size: 9, weight: .semibold))
+                            Text(link.label).font(Typo.ui(baseSize - 2, weight: .medium)).lineLimit(1)
+                        }
+                        .foregroundStyle(palette.accent)
+                        .padding(.horizontal, 8)
+                        .frame(height: 22)
+                        .background(palette.accent.opacity(0.10), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Go to this place in the book")
+                }
+            }
+        }
+    }
+
+    static func bookLinks(in text: String) -> [(label: String, url: URL)] {
+        var out: [(String, URL)] = []
+        // The target may contain one level of parentheses, as CFIs do.
+        for match in text.matches(of: /\[([^\]]+)\]\((coreader:\/\/[^\s()]*(?:\([^()]*\)[^\s()]*)*)\)/) {
+            let raw = String(match.2)
+            let encoded = raw.replacingOccurrences(of: "[", with: "%5B").replacingOccurrences(of: "]", with: "%5D")
+            if let url = URL(string: encoded), !out.contains(where: { $0.1 == url }) { out.append((String(match.1), url)) }
+        }
+        return out
     }
 
     @ViewBuilder
@@ -160,5 +205,41 @@ struct MarkdownText: View {
         if let lines = code { out.append(.code(lines.joined(separator: "\n"))) }
         flush()
         return out
+    }
+}
+
+/// Lays children out in rows, wrapping to the next row when one is full.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(subviews, width: proposal.width ?? .infinity)
+        return CGSize(width: proposal.width ?? rows.width, height: rows.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (index, origin) in arrange(subviews, width: bounds.width).origins.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                                  proposal: ProposedViewSize(width: min(bounds.width, subviews[index].sizeThatFits(.unspecified).width), height: nil))
+        }
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> (origins: [CGPoint], width: CGFloat, height: CGFloat) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            let w = min(size.width, width)
+            if x > 0, x + w > width {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            origins.append(CGPoint(x: x, y: y))
+            x += w + spacing
+            rowHeight = max(rowHeight, size.height)
+            widest = max(widest, x - spacing)
+        }
+        return (origins, widest, y + rowHeight)
     }
 }

@@ -28,10 +28,10 @@ enum ReaderTheme: String, CaseIterable, Identifiable, Codable {
                     tertiary: 0xA8967B, rule: 0xD9C8A6, accent: 0x9A4A1F, selection: 0xE6C98C)
         case .dusk:
             Palette(page: 0x26231F, surface: 0x1E1C19, raised: 0x302C27, ink: 0xE4DCCD, secondary: 0xA39A8B,
-                    tertiary: 0x736B5F, rule: 0x3A352F, accent: 0xE08A5B, selection: 0x5A4A2E)
+                    tertiary: 0x938B7D, rule: 0x3A352F, accent: 0xE08A5B, selection: 0x5A4A2E)
         case .night:
             Palette(page: 0x121110, surface: 0x0B0A09, raised: 0x1B1917, ink: 0xC9C2B4, secondary: 0x8B8377,
-                    tertiary: 0x5C564D, rule: 0x26231F, accent: 0xD9805A, selection: 0x4A3D26)
+                    tertiary: 0x7F786C, rule: 0x26231F, accent: 0xD9805A, selection: 0x4A3D26)
         }
     }
 }

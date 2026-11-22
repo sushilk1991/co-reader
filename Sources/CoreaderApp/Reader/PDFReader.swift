@@ -426,17 +426,6 @@ final class PDFReaderController: NSObject {
 
 final class ReaderPDFView: PDFView {
     weak var controller: PDFReaderController?
-
-    override func keyDown(with event: NSEvent) {
-        guard displayMode == .singlePage || displayMode == .twoUp,
-              !event.modifierFlags.contains(.command) else { return super.keyDown(with: event) }
-        switch event.keyCode {
-        case 124, 121: controller?.next()                                   // right arrow, page down
-        case 123, 116: controller?.previous()                               // left arrow, page up
-        case 49: event.modifierFlags.contains(.shift) ? controller?.previous() : controller?.next()   // space
-        default: super.keyDown(with: event)
-        }
-    }
 }
 
 struct PDFReaderView: NSViewRepresentable {

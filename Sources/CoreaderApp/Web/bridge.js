@@ -137,6 +137,7 @@ class Reader {
             view.addEventListener('show-annotation', e => {
                 const a = this.annotations.get(e.detail.value)
                 if (!a) return
+                this.annotationTapAt = performance.now()
                 const doc = e.detail.range.startContainer.ownerDocument
                 post('annotationTap', { id: a.id, rect: toPageRect(doc, e.detail.range.getBoundingClientRect()) })
             })
@@ -205,13 +206,15 @@ class Reader {
             if (img) this.#reportImage(img, doc, index, point)
             else post('contextMenu', { point, hasSelection: !!sel && !sel.isCollapsed })
         })
-        doc.addEventListener('keydown', e => this.#key(e))
         doc.addEventListener('click', e => {
             const sel = doc.getSelection()
             if (sel && !sel.isCollapsed) return
             if (e.target.closest?.('a[href]')) return
             const frame = doc.defaultView?.frameElement?.getBoundingClientRect()
-            post('tap', { x: (e.clientX + (frame?.left ?? 0)) / window.innerWidth })
+            const x = (e.clientX + (frame?.left ?? 0)) / window.innerWidth
+            // After the highlight hit-test has had its turn: a click that opened a
+            // highlight must not also count as a tap on the page (which would close it).
+            setTimeout(() => { if (performance.now() - (this.annotationTapAt ?? -1e9) > 250) post('tap', { x }) }, 0)
         })
         // Double-click on an image opens it large; handled natively.
         doc.addEventListener('dblclick', e => {
@@ -292,15 +295,6 @@ class Reader {
             sectionCurrent: section?.current ?? 0, sectionTotal: section?.total ?? 0,
             visibleText: (detail.range?.toString?.() ?? '').replace(/\s+/g, ' ').trim().slice(0, 6000),
         })
-    }
-
-    #key(e) {
-        if (e.metaKey || e.ctrlKey || e.altKey) return
-        const k = e.key
-        if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); this.prev() }
-        else if (k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && !e.shiftKey)) { e.preventDefault(); this.next() }
-        else if (k === ' ' && e.shiftKey) { e.preventDefault(); this.prev() }
-        else if (k === 'Escape') post('escape')
     }
 
     next() { return this.view?.goRight() }
@@ -408,6 +402,4 @@ class Reader {
 }
 
 window.reader = new Reader()
-document.addEventListener('keydown', e => window.reader.view && (
-    e.key === 'ArrowLeft' ? window.reader.prev() : e.key === 'ArrowRight' ? window.reader.next() : null))
 post('ready')

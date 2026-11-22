@@ -237,73 +237,116 @@ struct AnnotationCard: View {
 // MARK: - Snip
 
 /// Drag out a rectangle of the page to save it as an image in the notes.
-struct SnipOverlay: View {
+///
+/// An AppKit view, not a SwiftUI gesture: it sits above the web or PDF view as a real
+/// view, so the drag always reaches it instead of selecting text underneath.
+struct SnipOverlay: NSViewRepresentable {
     let onSnip: (CGRect, Bool) -> Void
     let onCancel: () -> Void
     @Environment(\.palette) private var palette
-    @State private var start: CGPoint?
-    @State private var current: CGPoint?
 
-    private var rect: CGRect? {
+    func makeNSView(context: Context) -> SnipView {
+        let view = SnipView()
+        view.onSnip = onSnip
+        view.onCancel = onCancel
+        view.accent = NSColor(palette.accent)
+        view.setAccessibilityLabel("Snip area. Drag to select, Escape to cancel.")
+        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
+        return view
+    }
+
+    func updateNSView(_ view: SnipView, context: Context) {
+        view.onSnip = onSnip
+        view.onCancel = onCancel
+    }
+}
+
+final class SnipView: NSView {
+    var onSnip: (CGRect, Bool) -> Void = { _, _ in }
+    var onCancel: () -> Void = {}
+    var accent = NSColor.systemRed
+    private var start: CGPoint?
+    private var current: CGPoint?
+
+    // Top-left origin, matching the reading area's coordinates.
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    // Snipping starts with the first press even if the window was not in front.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    private var selection: CGRect? {
         guard let start, let current else { return nil }
         return CGRect(x: min(start.x, current.x), y: min(start.y, current.y),
                       width: abs(current.x - start.x), height: abs(current.y - start.y))
     }
 
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                // Dim everything except the chosen area.
-                Path { path in
-                    path.addRect(CGRect(origin: .zero, size: geo.size))
-                    if let rect { path.addRect(rect) }
-                }
-                .fill(.black.opacity(0.28), style: FillStyle(eoFill: true))
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .crosshair)
+    }
 
-                if let rect {
-                    Rectangle()
-                        .strokeBorder(.white, lineWidth: 1)
-                        .background(Rectangle().strokeBorder(palette.accent, style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
-                        .frame(width: rect.width, height: rect.height)
-                        .offset(x: rect.minX, y: rect.minY)
-                    Text("\(Int(rect.width)) × \(Int(rect.height))")
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.black.opacity(0.6), in: Capsule())
-                        .offset(x: rect.minX, y: max(4, rect.minY - 22))
-                } else {
-                    Text("Drag over a figure, table or passage to save it to your notes.  Hold ⌥ to also copy it.  Esc to cancel.")
-                        .font(Typo.ui(12.5, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(.black.opacity(0.7), in: Capsule())
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 18)
-                }
-            }
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                .onChanged { value in
-                    start = start ?? value.startLocation
-                    current = CGPoint(x: min(max(value.location.x, 0), geo.size.width),
-                                      y: min(max(value.location.y, 0), geo.size.height))
-                }
-                .onEnded { _ in
-                    let chosen = rect
-                    start = nil
-                    current = nil
-                    if let chosen, chosen.width > 12, chosen.height > 12 {
-                        onSnip(chosen, NSEvent.modifierFlags.contains(.option))
-                    } else {
-                        onCancel()
-                    }
-                })
-            .onHover { inside in
-                if inside { NSCursor.crosshair.push() } else { NSCursor.pop() }
-            }
+    override func mouseDown(with event: NSEvent) {
+        start = convert(event.locationInWindow, from: nil)
+        current = start
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        current = CGPoint(x: min(max(p.x, 0), bounds.width), y: min(max(p.y, 0), bounds.height))
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let chosen = selection
+        start = nil
+        current = nil
+        needsDisplay = true
+        if let chosen, chosen.width > 12, chosen.height > 12 {
+            onSnip(chosen, event.modifierFlags.contains(.option))
+        } else {
+            onCancel()
         }
-        .accessibilityLabel("Snip area. Drag to select, Escape to cancel.")
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { onCancel() } else { super.keyDown(with: event) }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Dim everything except the chosen area.
+        let dim = NSBezierPath(rect: bounds)
+        if let selection { dim.append(NSBezierPath(rect: selection)) }
+        dim.windingRule = .evenOdd
+        NSColor.black.withAlphaComponent(0.28).setFill()
+        dim.fill()
+
+        if let selection {
+            NSColor.white.setStroke()
+            let border = NSBezierPath(rect: selection.insetBy(dx: 0.5, dy: 0.5))
+            border.lineWidth = 1
+            border.stroke()
+            accent.setStroke()
+            border.setLineDash([5, 4], count: 2, phase: 0)
+            border.stroke()
+            drawLabel("\(Int(selection.width)) × \(Int(selection.height))", size: 10,
+                      at: CGPoint(x: selection.minX, y: max(4, selection.minY - 22)), centered: false)
+        } else {
+            drawLabel("Drag over a figure, table or passage to save it to your notes.  Hold ⌥ to also copy it.  Esc to cancel.",
+                      size: 12.5, at: CGPoint(x: bounds.midX, y: 18), centered: true)
+        }
+    }
+
+    private func drawLabel(_ text: String, size: CGFloat, at point: CGPoint, centered: Bool) {
+        let string = NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: size, weight: .medium), .foregroundColor: NSColor.white,
+        ])
+        let textSize = string.size()
+        let padding = CGSize(width: size > 11 ? 14 : 6, height: size > 11 ? 8 : 2)
+        var box = CGRect(x: point.x, y: point.y, width: textSize.width + padding.width * 2, height: textSize.height + padding.height * 2)
+        if centered { box.origin.x -= box.width / 2 }
+        NSColor.black.withAlphaComponent(0.7).setFill()
+        NSBezierPath(roundedRect: box, xRadius: box.height / 2, yRadius: box.height / 2).fill()
+        string.draw(at: CGPoint(x: box.minX + padding.width, y: box.minY + padding.height))
     }
 }
 

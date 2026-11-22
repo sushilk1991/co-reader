@@ -288,8 +288,9 @@ private struct MessageView: View {
         case .assistant:
             VStack(alignment: .leading, spacing: 8) {
                 if !message.text.isEmpty {
+                    // Not selectable: selectable text swallows clicks on links, and the links
+                    // into the book matter more here. Copy is one click away below.
                     MarkdownText(text: message.text)
-                        .textSelection(.enabled)
                         .opacity(message.failed ? 0.75 : 1)
                 }
                 if message.isStreaming {

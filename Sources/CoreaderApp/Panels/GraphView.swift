@@ -15,6 +15,12 @@ struct GraphView: View {
     @State private var hover: String?
     @State private var selected: String?
 
+    /// As large as is useful, but always inside the window it is attached to.
+    private var sheetSize: CGSize {
+        let window = NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.titled) && $0.sheetParent == nil }?.frame.size ?? CGSize(width: 1320, height: 860)
+        return CGSize(width: min(1080, window.width - 60), height: min(680, window.height - 80))
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             ZStack {
@@ -38,9 +44,9 @@ struct GraphView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Rectangle().fill(palette.rule).frame(width: 0.5)
-            sidebar.frame(width: 320)
+            sidebar.frame(width: sheetSize.width < 960 ? 270 : 320)
         }
-        .frame(width: 1080, height: 680)
+        .frame(width: sheetSize.width, height: sheetSize.height)
         .background(palette.page)
         .task { await build() }
     }

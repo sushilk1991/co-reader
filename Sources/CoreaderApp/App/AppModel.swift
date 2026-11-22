@@ -267,6 +267,7 @@ extension AppModel {
         switch parts.first ?? "" {
         case "import": importer.importFiles(arg.split(separator: "|").map { URL(fileURLWithPath: String($0)) })
         case "link": importer.importLink(arg)
+        case "url": if let url = URL(string: arg) { handle(url: url) }
         case "open":
             if let entry = books.first(where: { $0.id == arg || $0.book.title.localizedCaseInsensitiveContains(arg) }) { open(entry.id) }
         case "close": closeReader()
@@ -287,6 +288,9 @@ extension AppModel {
         case "contents": reader?.showsContents.toggle()
         case "appearance": reader?.showsAppearance.toggle()
         case "select": reader?.debugSelect(arg)
+        case "webclick":
+            let n = arg.split(separator: " ").compactMap { Double($0) }
+            if n.count == 2 { reader?.debugWebClick(x: n[0], y: n[1]) }
         case "highlight": reader?.highlight(HighlightColor(rawValue: arg) ?? .yellow)
         case "glance": reader?.glance(Glance.Kind(rawValue: arg) ?? .explain)
         case "ask": reader?.chat.send(arg)

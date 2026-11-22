@@ -22,7 +22,11 @@ enum DebugHooks {
         let visible = NSApp.windows.filter { $0.isVisible && $0.frame.width > 40 }
         guard let window = visible.filter({ $0.styleMask.contains(.titled) && $0.sheetParent == nil })
             .max(by: { $0.frame.width < $1.frame.width }) else { return log("shot: no window") }
-        let width = Int(window.frame.width), height = Int(window.frame.height)
+        // The canvas grows to take in popovers that reach past the window's edge.
+        let overlays = visible.filter { $0 !== window }.sorted { $0.orderedIndex > $1.orderedIndex }
+        let canvas = overlays.reduce(window.frame) { $0.union($1.frame) }
+        let width = Int(canvas.width), height = Int(canvas.height)
+        let originX = window.frame.minX - canvas.minX, originY = window.frame.minY - canvas.minY
         func context(_ w: Int, _ h: Int) -> CGContext {
             CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                       space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -34,13 +38,16 @@ enum DebugHooks {
             return rep.cgImage
         }
         let base = context(width, height)
-        if let image = render(window) { base.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height)) }
+        base.setFillColor(NSColor(white: 0.5, alpha: 1).cgColor)
+        base.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        if let image = render(window) {
+            base.draw(image, in: CGRect(x: originX, y: originY, width: window.frame.width, height: window.frame.height))
+        }
         // Sheets and popovers are windows of their own; they go on top once web content is in.
-        let overlays = visible.filter { $0 !== window }.sorted { $0.orderedIndex > $1.orderedIndex }
         func drawOverlays() {
             for w in overlays {
                 guard let image = render(w) else { continue }
-                base.draw(image, in: CGRect(x: w.frame.minX - window.frame.minX, y: w.frame.minY - window.frame.minY,
+                base.draw(image, in: CGRect(x: w.frame.minX - canvas.minX, y: w.frame.minY - canvas.minY,
                                             width: w.frame.width, height: w.frame.height))
             }
         }
@@ -58,11 +65,12 @@ enum DebugHooks {
         // Web content lives in another process and is missing from the window image, so it
         // is fetched separately and laid in wherever the window shows the bare page colour
         // (anything the app draws over the page stays on top).
-        let scale = CGFloat(width) / window.frame.width
+        let scale: CGFloat = 1
+        let windowTop = canvas.maxY - window.frame.maxY
         for web in webs {
             let frame = web.convert(web.bounds, to: nil)
             let w = Int(frame.width * scale), h = Int(frame.height * scale)
-            let originX = Int(frame.minX * scale), originY = Int((window.frame.height - frame.maxY) * scale)
+            let originX = Int(originX + frame.minX), originY = Int(windowTop + window.frame.height - frame.maxY)
             web.takeSnapshot(with: nil) { snap, _ in
                 MainActor.assumeIsolated {
                     if let cg = snap?.cgImage(forProposedRect: nil, context: nil, hints: nil), w > 0, h > 0,
@@ -123,8 +131,9 @@ enum DebugHooks {
         guard let (window, point) = target(x, y),
               let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1) else { return }
-        // Through the application, as real events travel, so event monitors see them.
-        NSApp.sendEvent(event)
+        // Into the application's event queue, as real events arrive, so event monitors and
+        // the nested loops that track a drag both see them.
+        NSApp.postEvent(event, atStart: false)
     }
 
     /// `click x y`, `dclick x y`, `rclick x y`, `drag x1 y1 x2 y2`, `move x y`, `type text`,
@@ -143,24 +152,29 @@ enum DebugHooks {
         case "move" where n.count == 2:
             mouse(.mouseMoved, n[0], n[1])
         case "drag" where n.count == 4:
+            // Spread over time, as a hand does it: gesture recognizers follow the events
+            // across run-loop turns and ignore a drag that happens all at once.
             mouse(.leftMouseDown, n[0], n[1])
-            for i in 1...8 {
-                let t = Double(i) / 8
-                mouse(.leftMouseDragged, n[0] + (n[2] - n[0]) * t, n[1] + (n[3] - n[1]) * t)
+            let steps = 12
+            for i in 1...steps {
+                let t = Double(i) / Double(steps)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03 * Double(i)) {
+                    mouse(.leftMouseDragged, n[0] + (n[2] - n[0]) * t, n[1] + (n[3] - n[1]) * t)
+                }
             }
-            mouse(.leftMouseUp, n[2], n[3])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03 * Double(steps + 2)) { mouse(.leftMouseUp, n[2], n[3]) }
         case "type" where parts.count > 1:
             let window = NSApp.windows.first { $0.isVisible && $0.firstResponder is NSTextView } ?? mainWindow
             (window?.firstResponder as? NSTextView)?.insertText(parts[1], replacementRange: NSRange(location: NSNotFound, length: 0))
         case "key" where parts.count > 1:
-            let codes: [String: (UInt16, String)] = ["return": (36, "\r"), "escape": (53, "\u{1b}"), "tab": (48, "\t"), "left": (123, ""), "right": (124, ""),
-                                                     "up": (126, ""), "down": (125, ""), "delete": (51, "\u{7f}"), "space": (49, " ")]
+            let codes: [String: (UInt16, String)] = ["return": (36, "\r"), "escape": (53, "\u{1b}"), "tab": (48, "\t"), "left": (123, "\u{F702}"), "right": (124, "\u{F703}"),
+                                                     "up": (126, "\u{F700}"), "down": (125, "\u{F701}"), "delete": (51, "\u{7f}"), "space": (49, " ")]
             guard let (code, chars) = codes[parts[1]] else { return true }
             let window = NSApp.windows.filter { $0.isVisible }.min(by: { $0.orderedIndex < $1.orderedIndex }) ?? mainWindow
             for type in [NSEvent.EventType.keyDown, .keyUp] {
                 if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                                 windowNumber: window?.windowNumber ?? 0, context: nil, characters: chars,
-                                                charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) { window?.sendEvent(event) }
+                                                charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) { NSApp.sendEvent(event) }
             }
         default:
             return false

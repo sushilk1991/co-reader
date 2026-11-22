@@ -243,7 +243,7 @@ private struct ReadingArea: View {
 
                 if let selection = reader.selection, reader.glance == nil, !reader.isSnipping {
                     SelectionBar(reader: reader)
-                        .floating(near: selection.rect, in: geo.size, size: CGSize(width: 372, height: 40))
+                        .floating(near: selection.rect, in: geo.size, size: CGSize(width: 452, height: 40))
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 }
 
@@ -275,7 +275,7 @@ private struct ReadingArea: View {
                 }
 
                 if reader.isSnipping {
-                    SnipOverlay { rect, copy in reader.snip(rect, copyToClipboard: copy) } onCancel: { reader.isSnipping = false }
+                    SnipOverlay(onSnip: { rect, copy in reader.snip(rect, copyToClipboard: copy) }, onCancel: { reader.isSnipping = false })
                 }
 
                 if reader.showsFinishCard {

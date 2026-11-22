@@ -152,6 +152,7 @@ final class ReaderModel {
             pdf = nil
         }
         chat.reader = self
+        installKeys()
         start()
     }
 
@@ -229,7 +230,41 @@ final class ReaderModel {
         return payload
     }
 
+    @ObservationIgnored private var keyMonitor: Any?
+
+    /// Page keys work wherever focus is, except while typing. Handled here once, not in
+    /// the web page and the PDF view separately, so the behaviour is the same everywhere.
+    private func installKeys() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            nonisolated(unsafe) let event = event
+            let handled = MainActor.assumeIsolated { self?.handleKey(event) ?? false }
+            return handled ? nil : event
+        }
+    }
+
+    private func handleKey(_ event: NSEvent) -> Bool {
+        guard app.reader === self, app.overlay == nil, let window = event.window, window.isMainWindow || window.sheetParent == nil,
+              window.attachedSheet == nil, window.styleMask.contains(.titled) else { return false }
+        // Typing in the chat, a note or a search field keeps its keys.
+        if let responder = window.firstResponder as? NSTextView, responder.isEditable { return false }
+        let flags = event.modifierFlags.intersection([.command, .control, .option])
+        guard flags.isEmpty else { return false }
+        let scrolling = app.settings.pageTurn == .scroll
+        switch event.keyCode {
+        case 124: nextPage(); return true                                   // right arrow
+        case 123: previousPage(); return true                               // left arrow
+        case 121 where !scrolling: nextPage(); return true                  // page down
+        case 116 where !scrolling: previousPage(); return true              // page up
+        case 49 where !scrolling:                                           // space
+            event.modifierFlags.contains(.shift) ? previousPage() : nextPage()
+            return true
+        default: return false
+        }
+    }
+
     func close() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
         clock?.cancel()
         saveTask?.cancel()
         persistLocation()
@@ -886,6 +921,18 @@ final class NotesFocus {
 }
 
 extension ReaderModel {
+    /// Development: a click inside the book page at a point of the reading area.
+    func debugWebClick(x: Double, y: Double) {
+        let js = """
+        (() => { for (const {doc} of window.reader.view.renderer.getContents()) {
+          const f = doc.defaultView.frameElement.getBoundingClientRect(); const cx = \(x) - f.left, cy = \(y) - f.top
+          const el = doc.elementFromPoint(cx, cy)
+          if (el) { el.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: cx, clientY: cy, view: doc.defaultView })); return el.tagName } }
+          return 'none' })()
+        """
+        web?.webView.evaluateJavaScript(js) { result, _ in MainActor.assumeIsolated { DebugHooks.log("webclick -> \(String(describing: result))") } }
+    }
+
     /// Development: select the first occurrence of `text` on the visible page.
     func debugSelect(_ text: String) {
         if let web {

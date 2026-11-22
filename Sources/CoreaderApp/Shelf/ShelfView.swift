@@ -78,15 +78,9 @@ struct ShelfView: View {
 
     private var header: some View {
         @Bindable var shelf = shelf
-        return HStack(spacing: 0) {
-            Text("Coreader")
-                .font(.system(size: 19, weight: .semibold, design: .serif))
-                .italic()
-                .foregroundStyle(palette.ink)
-                .padding(.leading, 84)
-
-            Spacer(minLength: 24)
-
+        return ZStack {
+            // Centred on the window by themselves, so the search field growing does not
+            // push them sideways.
             HStack(spacing: 26) {
                 ForEach(ShelfTab.allCases) { tab in
                     let count = tab.status.map { s in app.books.filter { $0.book.status == s }.count } ?? app.books.count
@@ -116,6 +110,13 @@ struct ShelfView: View {
                     .accessibilityAddTraits(shelf.tab == tab ? .isSelected : [])
                 }
             }
+
+            HStack(spacing: 0) {
+            Text("Coreader")
+                .font(.system(size: 19, weight: .semibold, design: .serif))
+                .italic()
+                .foregroundStyle(palette.ink)
+                .padding(.leading, 84)
 
             Spacer(minLength: 24)
 
@@ -168,6 +169,7 @@ struct ShelfView: View {
                 .help("Add books (click) or add from a link (hold)")
             }
             .padding(.trailing, 20)
+            }
         }
         .frame(height: 54)
         .background(palette.surface)
@@ -348,46 +350,56 @@ private struct BookCell: View {
             .buttonStyle(.plain)
             .padding(.bottom, 14)
 
-            Text(book.title)
-                .font(Typo.display(13.5, weight: .medium))
-                .foregroundStyle(palette.ink)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-            if !book.authorLine.isEmpty {
-                Text(book.shortAuthors)
-                    .font(Typo.ui(11.5))
-                    .foregroundStyle(palette.secondary)
-                    .lineLimit(1)
-                    .padding(.top, 2)
+            Button { shelf.detail = entry } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(book.title)
+                        .font(Typo.display(13.5, weight: .medium))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !book.authorLine.isEmpty {
+                        Text(book.shortAuthors)
+                            .font(Typo.ui(11.5))
+                            .foregroundStyle(palette.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help("Details")
+
             HStack(spacing: 6) {
                 if let status = app.busyBooks[entry.id] {
                     ProgressView().controlSize(.mini)
-                    Text(status).font(Typo.ui(10.5)).foregroundStyle(palette.tertiary)
-                } else if book.rating != nil || hovering {
+                    Text(status).font(Typo.ui(10.5)).foregroundStyle(palette.tertiary).lineLimit(1)
+                } else {
+                    // Always there, so rating a book never depends on finding a hover state.
                     StarRating(rating: book.rating, size: 10) { app.setRating($0, for: entry.id) }
-                } else if book.status == .reading {
-                    Text("\(book.progress.percent)%")
-                        .font(Typo.ui(10.5).monospacedDigit())
-                        .foregroundStyle(palette.tertiary)
-                } else if book.kind != .book {
-                    Text(book.kind == .paper ? "Paper" : "Article")
-                        .font(Typo.ui(10.5))
-                        .foregroundStyle(palette.tertiary)
+                        .opacity(book.rating == nil && !hovering ? 0.55 : 1)
                 }
                 Spacer(minLength: 0)
-                if hovering {
-                    Button { shelf.detail = entry } label: {
-                        Image(systemName: "info.circle").font(.system(size: 12)).foregroundStyle(palette.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Details")
-                    .accessibilityLabel("Details for \(book.title)")
+                Text(book.format == .article ? "WEB" : book.format.rawValue.uppercased())
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(palette.tertiary)
+                Menu {
+                    BookMenu(entry: entry, shelf: shelf)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.secondary)
+                        .frame(width: 18, height: 16)
+                        .contentShape(Rectangle())
                 }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                .help("Shelf, rating and more")
+                .accessibilityLabel("Actions for \(book.title)")
             }
             .frame(height: 16)
-            .padding(.top, 5)
+            .padding(.top, 6)
         }
         .frame(width: 150, alignment: .leading)
         .contentShape(Rectangle())
