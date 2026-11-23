@@ -262,3 +262,29 @@ func liveCoverGeneration() async throws {
     let image = try await generator.generate(brief, backend: backend, outputDirectory: out)
     print("COVER_IMAGE=\(image.path)")
 }
+
+@Test func coverPromptAsksForAnIdeaAndVariesItsArtDirection() {
+    let papers = [
+        "Attention Is All You Need", "Switch Transformers", "Textbooks Are All You Need", "FlashAttention",
+        "The Platonic Representation Hypothesis", "Scaling Laws for Neural Language Models", "Outrageously Large Neural Networks",
+        "Language Models are Few-Shot Learners", "ReAct: Synergizing Reasoning and Acting in Language Models",
+        "RoFormer: Enhanced Transformer with Rotary Position Embedding", "Training Compute-Optimal Large Language Models",
+        "LLaMA: Open and Efficient Foundation Language Models", "Sparse Upcycling", "PaLM: Scaling Language Modeling with Pathways",
+        "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models", "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+        "Training language models to follow instructions with human feedback",
+    ].map { CoverBrief(title: $0, kind: .paper) }
+    // One field, one shelf: the covers must not share a recipe.
+    #expect(Set(papers.map { CoverDirection.direction(for: $0) }).count >= 7)
+    #expect(Set(papers.map { CoverLayout.layout(for: $0) }).count >= 4)
+    let looks = papers.map { "\(CoverDirection.direction(for: $0))/\(CoverLayout.layout(for: $0))/\(CoverPalette.palette(for: $0).name)" }
+    #expect(Set(looks).count >= papers.count - 1)
+
+    for brief in papers {
+        let prompt = CoverPromptBuilder.prompt(for: brief)
+        #expect(prompt.contains("Concept first"))
+        #expect(prompt.contains(CoverDirection.direction(for: brief).artwork))
+    }
+    var again = papers[0]
+    again.variant = 1
+    #expect(CoverPromptBuilder.prompt(for: again) != CoverPromptBuilder.prompt(for: papers[0]))
+}

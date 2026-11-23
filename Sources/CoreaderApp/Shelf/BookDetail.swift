@@ -17,7 +17,7 @@ struct BookDetail: View {
             let book = entry.book
             HStack(alignment: .top, spacing: 36) {
                 VStack(spacing: 16) {
-                    BookCover(entry: entry, width: 210)
+                    BookCover(entry: entry, width: 210, grows: true)
                     if let status = app.busyBooks[entry.id] {
                         HStack(spacing: 6) { ProgressView().controlSize(.mini); Text(status).font(Typo.ui(11)).foregroundStyle(palette.tertiary) }
                     } else {

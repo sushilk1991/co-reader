@@ -37,6 +37,19 @@ final class WriteQueue {
         return try await task.value
     }
 
+    /// Waits for queued writes, but not forever: a write stuck on a file iCloud will not
+    /// hand over must not keep the app from quitting. Returns whether everything finished.
+    @discardableResult
+    func drain(within limit: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while pending > 0, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+        return pending == 0
+    }
+
+    var hasPendingWrites: Bool { pending > 0 }
+
     /// Returns when every queued write has finished.
     func drain() async {
         while pending > 0 {

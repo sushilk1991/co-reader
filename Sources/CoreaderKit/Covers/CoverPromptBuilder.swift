@@ -7,50 +7,66 @@ public enum CoverPromptBuilder {
 
     /// A complete image-generation prompt. Deterministic: the same brief always yields
     /// the same text. A new design is asked for by raising `brief.variant`.
+    ///
+    /// The prompt asks for an idea before it asks for a picture. Told only "an abstract
+    /// motif for this subject", an image model draws the same web of dots and curves for
+    /// every machine-learning paper; told to find what this one work claims and to show
+    /// that, in a named tradition of cover design, it has something to say.
     public static func prompt(for brief: CoverBrief) -> String {
         let palette = CoverPalette.palette(for: brief)
-        let motif = CoverMotif.motif(for: brief)
+        let direction = CoverDirection.direction(for: brief)
+        let layout = CoverLayout.layout(for: brief)
         let title = quotable(brief.displayTitle)
         let author = brief.authorLine.map(quotable)
 
         var lines: [String] = []
         lines.append(
-            "Front cover artwork for a \(noun(for: brief.kind)), designed in the spirit of Stripe Press hardcovers "
-                + "and mid-century scientific book jackets: one bold abstract idea, drawn large."
+            "Design the front cover of a \(noun(for: brief.kind)). Hold it to the standard of the best trade publishing: "
+                + "Penguin Great Ideas, Pelican paperbacks, Faber, Fitzcarraldo, Stripe Press. Be more ambitious than a "
+                + "tasteful pattern: this should be a cover a designer would put in a portfolio, and one that could "
+                + "belong to no other work."
         )
         lines.append("Format: flat, front-facing cover artwork that fills the whole frame edge to edge, portrait, 2:3 aspect ratio.")
 
-        var subject = "Subject: the work is titled \"\(title)\"."
+        var subject = "The work is titled \"\(title)\"."
         if let summary = brief.summary?.split(whereSeparator: \.isWhitespace).joined(separator: " "), !summary.isEmpty {
-            subject += " It is about: \(String(summary.prefix(600)))"
+            subject += " What it says: \(String(summary.prefix(900)))"
         }
         lines.append(subject)
 
         lines.append(
-            "Artwork: a single abstract geometric or mathematical motif that captures the essence of that subject, "
-                + "the way a diagram in a beautiful textbook would. A good starting point: \(motif.promptHint). "
-                + "Prefer the visual idea that belongs to this subject over a generic pattern. "
-                + "No literal illustration, no people, no faces, no objects, no robots, no brains, no glowing circuitry. "
-                + "Scale: the motif is the hero, at poster scale. It is big and graphic, runs edge to edge, fills the "
-                + "whole lower 55% of the cover and bleeds off the bottom and one side. Dozens of elements, not a handful; "
-                + "mix a few heavy confident strokes or solid flat shapes with fine precise lines. "
-                + "Never a small diagram floating in the middle of empty space. "
-                + "The upper part behind the title stays empty solid ground."
+            "Concept first: before drawing, work out the one claim, mechanism or surprise that sets this work apart "
+                + "from others in its field, and find a concrete visual metaphor for it, something a reader would "
+                + "recognise with a smile after reading the work. Show that one idea and nothing else. Things from the "
+                + "world are welcome when they carry the idea: tools, instruments, animals, plants, buildings, "
+                + "landscapes, hands, stylised figures. A cover that would suit any work on the same topic is a failure. "
+                + "Avoid the stock imagery of the field: no robots, no glowing brains, no circuit boards, no binary "
+                + "digits, no generic web of dots joined by lines, no photorealism."
         )
+
+        var artwork = "Art direction: \(direction.artwork)."
+        if direction == .diagram {
+            artwork += " A possible starting point: \(CoverMotif.motif(for: brief).promptHint)."
+        }
+        artwork += " Commit to this manner fully, at poster scale: one image, big, confident and simple enough to read "
+            + "from across a room, never a small picture floating in empty space."
+        lines.append(artwork)
+
+        if direction != .typographic { lines.append("Layout: \(layout.prompt)") }
+
         lines.append(
             "Colour: strictly limited palette, \(palette.description) "
                 + "(ground \(palette.ground), ink \(palette.primary), accent \(palette.accent)). "
-                + "One rich solid ground colour, no gradients, no glow, no 3D, no drop shadows. "
-                + "The accent appears once, on the single element the eye should land on."
+                + "Flat colour only; tints of these three are allowed. No gradients, no glow, no 3D rendering, no drop shadows. "
+                + "The accent is used sparingly, on the element the eye should land on."
         )
         lines.append(
-            "Finish: looks offset-printed on uncoated paper, with a faint paper grain and slightly soft ink edges. "
+            "Finish: looks printed on uncoated paper, with a faint paper grain and slightly soft ink edges. "
                 + "Matte and tactile."
         )
 
-        var typography = "Typography: the title \"\(title)\" set exactly as written, spelled correctly, in an elegant "
-            + "high-contrast serif, in the ink colour, large and well spaced, aligned left in the upper part of the cover, "
-            + "broken over two to four lines with clean margins."
+        var typography = "Typography: the title \"\(title)\" set exactly as written, spelled correctly, in "
+            + "\(direction.typeface), in the ink colour, with clean margins, broken over as many lines as it needs."
         if let author {
             typography += " The author line \"\(author)\" set small in letterspaced capitals near the bottom edge."
         }
@@ -58,7 +74,7 @@ public enum CoverPromptBuilder {
         lines.append(typography)
 
         lines.append(
-            "Do not show a physical book, a mockup, a spine, pages, a table, hands or a background behind the cover. "
+            "Do not show a physical book, a mockup, a spine, pages, a table, hands holding it or a background behind the cover. "
                 + "The image is the cover itself, perfectly flat and straight-on, with no border and no perspective."
         )
         return lines.joined(separator: "\n")

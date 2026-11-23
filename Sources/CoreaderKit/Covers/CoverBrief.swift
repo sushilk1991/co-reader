@@ -88,6 +88,21 @@ public struct CoverPalette: Sendable, Equatable {
                      description: "terracotta-red ground, cream ink, one deep navy accent"),
         CoverPalette(name: "slate", ground: "#2D3945", primary: "#E9E2D0", accent: "#7FC8A9",
                      description: "blue-slate ground, parchment ink, one pale mint accent"),
+        // Light and bright grounds: without them a shelf of generated covers is a wall of dark.
+        CoverPalette(name: "tangerine", ground: "#EE7A2E", primary: "#1B1A17", accent: "#FBF3E4",
+                     description: "bright paperback-orange ground, black ink, one cream accent"),
+        CoverPalette(name: "sky", ground: "#BFD9E6", primary: "#152238", accent: "#D8432B",
+                     description: "pale sky-blue ground, deep navy ink, one poppy-red accent"),
+        CoverPalette(name: "rose", ground: "#F0C4C0", primary: "#3A1420", accent: "#1F6F5C",
+                     description: "dusty rose-pink ground, dark wine ink, one bottle-green accent"),
+        CoverPalette(name: "chalk", ground: "#F7F4EC", primary: "#111111", accent: "#1F4FD8",
+                     description: "chalk-white ground, black ink, one ultramarine-blue accent"),
+        CoverPalette(name: "sage", ground: "#C9D5B5", primary: "#1F2D1E", accent: "#C4472B",
+                     description: "soft sage-green ground, dark pine ink, one brick-red accent"),
+        CoverPalette(name: "lemon", ground: "#F2D94E", primary: "#1A1A1A", accent: "#D23C2A",
+                     description: "acid lemon-yellow ground, black ink, one tomato-red accent"),
+        CoverPalette(name: "cobalt", ground: "#1F3FB3", primary: "#F5F0E3", accent: "#F2C230",
+                     description: "saturated cobalt-blue ground, cream ink, one sunflower-yellow accent"),
     ]
 
     /// Same title and variant, same palette, every time.

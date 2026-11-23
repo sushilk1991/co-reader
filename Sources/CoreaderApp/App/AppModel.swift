@@ -81,6 +81,17 @@ final class AppModel {
         review = ReviewModel(libraryRoot: config.libraryRoot)
         preferredAgent = UserDefaults.standard.string(forKey: "agent.preferred").flatMap(AgentKind.init(rawValue:))
         importer = ImportService(app: self)
+        updater.prepareToQuit = { [weak self] in await self?.prepareToQuit() }
+    }
+
+    /// Before the app ends: the open book saves its place, and queued writes get a few
+    /// seconds to land. A write that iCloud holds up past that is lost rather than
+    /// keeping the app alive with nothing on screen to say why.
+    func prepareToQuit() async {
+        reader?.close()
+        if !(await WriteQueue.shared.drain(within: .seconds(8))) {
+            DebugHooks.log("quit: writes still pending after 8 s")
+        }
     }
 
     // MARK: Theme
@@ -117,6 +128,7 @@ final class AppModel {
         }
         review.reload(app: self)
         updater.checkAtLaunch()
+        Task.detached(priority: .utility) { Updater.removeLeftovers() }
         let links = pendingLinks
         pendingLinks = []
         for url in links { handle(url: url) }
@@ -323,6 +335,10 @@ extension AppModel {
         case "prev": reader?.previousPage()
         case "goto": if let f = Double(arg) { reader?.go(toFraction: f) }
         case "panel": reader?.panel = ReaderPanel(rawValue: arg)
+        case "cover":
+            // cover <part of a title> | cover all : design a new cover (needs covers.generate on)
+            if arg == "all" { importer.redesignAllCovers(); break }
+            if let e = books.first(where: { $0.book.title.localizedCaseInsensitiveContains(arg) }) { Task { await importer.redesignCover(for: e.id) } }
         case "overlay": overlay = ShelfOverlay(rawValue: arg)
         case "notebook":
             // notebook | notebook close | notebook book=<title> kind=notes color=green sort=newest text=<words to the end>
@@ -378,9 +394,16 @@ extension AppModel {
             case "check": updater.check(byRequest: true)
             case "install": if case .available(let release) = updater.phase { updater.install(release) }
             case "dismiss": updater.dismiss()
+            case "cancel": updater.cancel()
+            case "relaunch": updater.relaunch()
             default: break
             }
             DebugHooks.log("update phase=\(updater.phase) presented=\(updater.isPresented)")
+        case "stallwrites":
+            // Test aid: a write that takes this many seconds, as one held up by iCloud would.
+            let seconds = Double(arg) ?? 30
+            WriteQueue.shared.enqueue("stall", { Thread.sleep(forTimeInterval: seconds) })
+            DebugHooks.log("stalled writes for \(seconds) s")
         case "dump":
             DebugHooks.log("books=\(books.count) route=\(route) agents=\(agents.map(\.kind.rawValue)) reader.loading=\(String(describing: reader?.isLoading)) annotations=\(reader?.annotations.count ?? -1) fraction=\(reader?.fraction ?? -1) chat=\(reader?.chat.messages.last?.text.prefix(300) ?? "")")
         default: DebugHooks.log("unknown command: \(line)")

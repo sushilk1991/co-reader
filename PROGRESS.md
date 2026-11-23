@@ -81,4 +81,16 @@ end to end; settings and onboarding screens; `coreader` CLI inside the app bundl
   shown as Markdown. Driven off-screen: filters, search, sort, edit and remove reach `notes.md`,
   Undo restores, a row opens its book and Back returns to the notebook. Not driven: the colour
   submenu and other context-menu items, the export save dialog, drag of an image out of a row.
+- 1.0.5: covers keep their own proportions (`BookCover.drawnSize`): they were forced into 2:3 and
+  cropped at the sides. On the shelf a wider cover takes up to 1.24 times the width at full height;
+  small thumbnails fit inside their slot. Checked with PDFs of five shapes carrying a red frame.
+  Designed covers: the prompt now asks for a concept from the abstract first, then one of twelve art
+  directions (`CoverDirection`), six layouts and seventeen palettes, each drawn from the title's seed.
+  A book with no summary lends the designer its opening text. Settings can redesign every designed cover.
+  Updater: after staging, the app now quits itself (bounded 8 s wait for writes, then `exit`) instead of
+  `NSApp.terminate`, whose unbounded drain left 1.0.3 running with a stale "Installing…" sheet that had no
+  buttons. Every phase has Cancel; an app replaced by hand while running offers Relaunch; the swap script
+  reopens only when asked and never with `open -n`; leftovers beside the app are removed at launch.
+  Driven with a Developer-ID copy relabelled 1.0.3: update with a write stalled 60 s (quit after 8 s,
+  reopened as 1.0.4 in 14 s), cancel during download, replaced-while-running then Relaunch.
 - 2026-11-23: repository and releases made public (Sushil's request) after a leak audit of the tree, all history, PRs, release notes and the three DMGs. Updates no longer need `gh`.

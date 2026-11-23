@@ -274,6 +274,30 @@ final class ImportService {
         await generateCover(for: id)
     }
 
+    /// The start of the book's own text, when nothing describes it: the designer needs
+    /// something to read. Only text already extracted (the book has been opened, or is a PDF).
+    private func openingText(of book: Book) async -> String? {
+        let store = app.textStore
+        let text = try? await offMain { () -> String in
+            guard store.hasText(for: book.id) else { return "" }
+            var out = ""
+            for section in try store.load(for: book.id) where out.count < 1400 { out += section.text + " " }
+            return out
+        }
+        // Past the title page and its boilerplate, where the work starts saying something.
+        let words = (text ?? "").split(whereSeparator: \.isWhitespace)
+        guard words.count > 60 else { return nil }
+        return words.dropFirst(min(40, words.count / 4)).joined(separator: " ")
+    }
+
+    /// Every designed cover again, for when the way covers are designed has changed.
+    func redesignAllCovers() {
+        let ids = app.books.filter { $0.book.coverIsGenerated }.map(\.id)
+        guard !ids.isEmpty else { return app.show("No designed covers to redo.") }
+        app.show("Redesigning \(ids.count) \(ids.count == 1 ? "cover" : "covers"), two at a time. Each takes a few minutes.")
+        for id in ids { Task { await redesignCover(for: id) } }
+    }
+
     private func setProceduralCover(_ entry: BookEntry) async -> BookEntry {
         guard let current = app.entry(entry.id) else { return entry }
         let svg = ProceduralCover.svg(for: brief(for: current.book), width: 800, height: 1200)
@@ -298,7 +322,9 @@ final class ImportService {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         do {
-            let file = try await generator.generate(brief(for: entry.book), backend: backend, outputDirectory: dir)
+            var brief = brief(for: entry.book)
+            if (brief.summary ?? "").isEmpty { brief.summary = await openingText(of: entry.book) }
+            let file = try await generator.generate(brief, backend: backend, outputDirectory: dir)
             let data = try Data(contentsOf: file)
             guard let image = NSImage(data: data), let jpg = image.jpegData(maxDimension: 1600) else { return }
             await storeCover(jpg, fileExtension: "jpg", generated: true, for: id)

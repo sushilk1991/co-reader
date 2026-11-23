@@ -9,7 +9,7 @@ struct ShelfView: View {
     @State private var isDropTarget = false
     @FocusState private var searchFocused: Bool
 
-    private let columns = [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: 34, alignment: .top)]
+    private let columns = [GridItem(.adaptive(minimum: 150 * BookCover.growth, maximum: 230), spacing: 30, alignment: .topLeading)]
 
     var body: some View {
         @Bindable var shelf = shelf
@@ -315,7 +315,8 @@ private struct BookCell: View {
     @Environment(AppModel.self) private var app
     @Environment(\.palette) private var palette
     @State private var hovering = false
-
+    /// What the cover is drawn at; the text under it keeps to the same edge.
+    @State private var coverWidth: CGFloat = 150
 
     // Kept deliberately flat. The grid builds a whole row of these in one frame while
     // scrolling, so every control here is paid for six or more times at once: buttons,
@@ -325,7 +326,7 @@ private struct BookCell: View {
         let book = entry.book
         VStack(alignment: .leading, spacing: 0) {
             Button { app.open(entry.id) } label: {
-                BookCover(entry: entry, width: 150)
+                BookCover(entry: entry, width: 150, grows: true) { coverWidth = $0 }
                     .overlay(alignment: .topTrailing) {
                         if book.status == .read {
                             Image(systemName: "checkmark")
@@ -341,8 +342,8 @@ private struct BookCell: View {
                     .overlay(alignment: .bottomLeading) {
                         if book.status == .reading, book.progress > 0.005 {
                             Rectangle().fill(.white.opacity(0.95))
-                                .frame(width: 150 * min(1, book.progress), height: 3)
-                                .frame(width: 150, alignment: .leading)
+                                .frame(width: coverWidth * min(1, book.progress), height: 3)
+                                .frame(width: coverWidth, alignment: .leading)
                                 .background(.black.opacity(0.35))
                         }
                     }
@@ -413,7 +414,7 @@ private struct BookCell: View {
             .frame(height: 16)
             .padding(.top, 6)
         }
-        .frame(width: 150, alignment: .leading)
+        .frame(width: max(150, coverWidth), alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .contextMenu { BookMenu(entry: entry, shelf: shelf) }
@@ -463,7 +464,7 @@ private struct Today: View {
     var body: some View {
         if let lead = current.first {
             HStack(alignment: .top, spacing: 40) {
-                Button { app.open(lead.id) } label: { BookCover(entry: lead, width: 176) }
+                Button { app.open(lead.id) } label: { BookCover(entry: lead, width: 176, grows: true) }
                     .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 0) {

@@ -35,14 +35,21 @@ struct UpdateView: View {
                 ProgressView(value: fraction).tint(palette.accent).padding(.top, 22)
                 HStack {
                     Spacer()
-                    Button("Cancel") { updater.cancelDownload() }.keyboardShortcut(.cancelAction)
+                    Button("Cancel") { updater.cancel() }.keyboardShortcut(.cancelAction)
                 }
                 .padding(.top, 16)
-            case .installing:
+            case .installing, .checking:
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 22)
-            case .checking:
+                HStack { Spacer(); Button("Cancel") { updater.cancel() }.keyboardShortcut(.cancelAction) }.padding(.top, 16)
+            case .relaunching:
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 22)
-                HStack { Spacer(); Button("Cancel") { updater.cancelDownload() }.keyboardShortcut(.cancelAction) }.padding(.top, 16)
+            case .installedOnDisk:
+                HStack(spacing: 10) {
+                    Spacer()
+                    Button("Later") { updater.dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Relaunch Now") { updater.relaunch() }.keyboardShortcut(.defaultAction)
+                }
+                .padding(.top, 20)
             case .failed(_, let page):
                 HStack(spacing: 10) {
                     Spacer()
@@ -67,6 +74,8 @@ struct UpdateView: View {
         case .available(let release): "Coreader \(release.version) is available"
         case .downloading(let release, _): "Downloading Coreader \(release.version)…"
         case .installing(let release): "Installing Coreader \(release.version)…"
+        case .relaunching(let version): "Restarting as Coreader \(version)…"
+        case .installedOnDisk(let version): "Coreader \(version) is installed"
         case .failed: "The update did not go through"
         }
     }
@@ -83,6 +92,8 @@ struct UpdateView: View {
             let style = ByteCountFormatStyle(style: .file)
             return "\(Int64(total * fraction).formatted(style)) of \(Int64(total).formatted(style))"
         case .installing: return "Checking the download, then Coreader will reopen."
+        case .relaunching: return "Saving your place. Coreader will open again in a moment."
+        case .installedOnDisk: return "This window is still the older \(current). Relaunch to start using the new version."
         case .failed(let message, _): return message
         }
     }

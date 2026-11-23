@@ -14,6 +14,11 @@ final class Updater {
         case available(AppRelease)
         case downloading(AppRelease, fraction: Double)
         case installing(AppRelease)
+        /// The new version is in place (or will be the moment this process ends) and the
+        /// app is quitting to reopen as it.
+        case relaunching(AppVersion)
+        /// A newer Coreader was put in place by hand while this one kept running.
+        case installedOnDisk(AppVersion)
         case failed(String, page: URL?)
     }
 
@@ -36,6 +41,12 @@ final class Updater {
     }
 
     private var work: Task<Void, Never>?
+    /// The script waiting for this process to end so it can swap the new copy in.
+    private var swapper: Process?
+    private var staged: URL?
+
+    /// Closes what is open and finishes pending writes, within a time limit. Set by the app.
+    var prepareToQuit: (@MainActor () async -> Void)?
 
     // MARK: Checking
 
@@ -49,8 +60,14 @@ final class Updater {
     }
 
     func check(byRequest: Bool) {
-        if case .downloading = phase { isPresented = true; return }
-        if case .installing = phase { isPresented = true; return }
+        // A download or install in progress is shown again rather than started over. The
+        // sheet always has a way out, so this never traps anyone.
+        switch phase {
+        case .downloading, .installing, .relaunching:
+            isPresented = true
+            return
+        default: break
+        }
         work?.cancel()
         if byRequest { phase = .checking; isPresented = true }
         work = Task {
@@ -59,6 +76,12 @@ final class Updater {
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Keys.lastCheck)
             switch result {
             case .success(let release):
+                // Replaced by hand while running: nothing to download, only a relaunch.
+                if let onDisk = Self.versionOnDisk, let current = currentVersion, current < onDisk, release.version <= onDisk {
+                    phase = .installedOnDisk(onDisk)
+                    isPresented = true
+                    return
+                }
                 guard let current = currentVersion, current < release.version else {
                     phase = byRequest ? .upToDate : .idle
                     return
@@ -86,11 +109,65 @@ final class Updater {
         }
     }
 
-    func cancelDownload() {
+    /// Stops a check, download or install at any point before the app quits, and takes
+    /// away anything it left beside the app.
+    func cancel() {
         work?.cancel()
+        work = nil
+        cancelPendingSwap()
         phase = .idle
         isPresented = false
     }
+
+    private func cancelPendingSwap() {
+        if let swapper, swapper.isRunning { swapper.terminate() }
+        swapper = nil
+        if let staged { try? FileManager.default.removeItem(at: staged) }
+        staged = nil
+    }
+
+    /// The version of the app bundle on disk, read fresh: it differs from the running one
+    /// when the app was replaced while it was open.
+    static var versionOnDisk: AppVersion? {
+        let plist = Bundle.main.bundleURL.appendingPathComponent("Contents/Info.plist")
+        return (NSDictionary(contentsOf: plist)?["CFBundleShortVersionString"] as? String).flatMap(AppVersion.init)
+    }
+
+    /// Quits and opens the app again: used once the new version is in place.
+    func relaunch() {
+        // Only with something new in place: otherwise this would simply quit the app.
+        let onDisk: Bool = if case .installedOnDisk = phase { true } else { false }
+        guard onDisk || staged != nil else { return }
+        if case .installedOnDisk(let version) = phase {
+            // No swap waiting: start a small script that reopens the app once this one ends.
+            let opener = Process()
+            opener.executableURL = URL(fileURLWithPath: "/bin/sh")
+            opener.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; open $2 \"$3\"", "sh",
+                                String(ProcessInfo.processInfo.processIdentifier), DebugHooks.isOffscreen ? "-gj" : "", Bundle.main.bundleURL.path]
+            opener.standardInput = FileHandle.nullDevice
+            opener.standardOutput = FileHandle.nullDevice
+            opener.standardError = FileHandle.nullDevice
+            guard (try? opener.run()) != nil else {
+                phase = .failed("Coreader could not restart itself. Quit it and open it again to use \(version).", page: nil)
+                return
+            }
+            phase = .relaunching(version)
+        } else if staged != nil, let reopen = reopenFlag {
+            // The waiting script reopens the app only when asked to: quitting normally
+            // later would still put the update in place, without reopening.
+            FileManager.default.createFile(atPath: reopen.path, contents: Data())
+        }
+        Task {
+            DebugHooks.log("update: quitting to relaunch")
+            await prepareToQuit?()
+            // Not NSApp.terminate: a sheet or a held-up quit must not leave the old copy
+            // running with the new one waiting behind it.
+            UserDefaults.standard.synchronize()
+            exit(0)
+        }
+    }
+
+    private var reopenFlag: URL?
 
     static var releasesPage: URL { URL(string: "https://github.com/\(repository)/releases/latest")! }
 
@@ -135,6 +212,7 @@ final class Updater {
 
     func install(_ release: AppRelease) {
         work?.cancel()
+        cancelPendingSwap()
         phase = .downloading(release, fraction: 0)
         isPresented = true
         work = Task {
@@ -154,22 +232,19 @@ final class Updater {
                 try Task.checkCancellation()
                 phase = .installing(release)
 
-                let staged = try await Self.stage(image: image, in: folder, team: team, newerThan: currentVersion, beside: destination)
-                try Task.checkCancellation()
-                try Self.swapAfterQuit(staged: staged, destination: destination)
+                let copy = try await Self.stage(image: image, in: folder, team: team, newerThan: currentVersion, beside: destination)
+                guard !Task.isCancelled else { try? FileManager.default.removeItem(at: copy); return }
+                let flag = FileManager.default.temporaryDirectory.appendingPathComponent("coreader-reopen-\(UUID().uuidString)")
+                swapper = try Self.swapAfterQuit(staged: copy, destination: destination, reopenFlag: flag)
+                staged = copy
+                reopenFlag = flag
                 try? FileManager.default.removeItem(at: folder)   // `defer` does not run once the app exits
-                // The sheet first: an app with a sheet up does not act on a request to quit.
-                isPresented = false
-                try? await Task.sleep(for: .milliseconds(700))
-                NSApp.terminate(nil)
-                // The swap is waiting on this process. If quitting was held up by some
-                // other window, finish the pending writes and leave anyway.
-                try? await Task.sleep(for: .seconds(5))
-                await WriteQueue.shared.drain()
-                exit(0)
+                phase = .relaunching(release.version)
+                relaunch()
             } catch is CancellationError {
                 // Cancelled by the person; nothing to say.
             } catch {
+                guard !Task.isCancelled else { return }
                 phase = .failed((error as? Problem)?.message ?? error.localizedDescription, page: release.page)
                 isPresented = true
             }
@@ -265,25 +340,41 @@ final class Updater {
     }
 
     /// Leaves a small script waiting for this app to quit; it then renames the new copy
-    /// into place and opens it. If the rename fails the old app is put back.
-    private static func swapAfterQuit(staged: URL, destination: URL) throws {
+    /// into place and, if the app asked for it, opens it. If the rename fails the old app
+    /// is put back. A cancelled update removes the copy, and the script then does nothing.
+    private static func swapAfterQuit(staged: URL, destination: URL, reopenFlag: URL) throws -> Process {
         let script = """
         while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+        [ -d "$2" ] || exit 0
         old="$3.old-$$"
         if mv "$3" "$old" && mv "$2" "$3"; then rm -rf "$old"; else [ -e "$3" ] || mv "$old" "$3"; rm -rf "$2"; fi
-        open $4 "$3"
+        if [ -e "$5" ]; then rm -f "$5"; open $4 "$3"; fi
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        // Unattended test runs reopen in the background, as they started.
+        // Unattended test runs reopen in the background, as they started. Not `open -n`:
+        // that starts a second copy if one is somehow still running.
         process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), staged.path, destination.path,
-                             DebugHooks.isOffscreen ? "-gj" : "-n"]
+                             DebugHooks.isOffscreen ? "-gj" : "", reopenFlag.path]
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do { try process.run() } catch {
             try? FileManager.default.removeItem(at: staged)
             throw Problem(message: "The update could not be started.")
+        }
+        return process
+    }
+
+    /// Copies left beside the app by an update that never finished (the Mac restarted,
+    /// the app was force-quit). Old enough that no update can still be waiting on them.
+    nonisolated static func removeLeftovers() {
+        let folder = Bundle.main.bundleURL.deletingLastPathComponent()
+        let name = Bundle.main.bundleURL.lastPathComponent
+        guard let items = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        for item in items where item.lastPathComponent.hasPrefix(".Coreader-update-") || item.lastPathComponent.hasPrefix(name + ".old-") {
+            let modified = (try? item.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if Date().timeIntervalSince(modified) > 3600 { try? FileManager.default.removeItem(at: item) }
         }
     }
 }

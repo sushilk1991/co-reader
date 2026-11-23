@@ -39,11 +39,29 @@ final class CoverCache {
     }
 }
 
-/// A book cover that reads as an object: fixed 2:3 board, soft edge light along the spine,
-/// a grounded shadow.
+/// A book cover that reads as an object: soft edge light along the spine, a grounded
+/// shadow. The cover keeps its own proportions and is never cropped: publishers' covers
+/// and PDF first pages are often wider than the 2:3 this app draws.
 struct BookCover: View {
     let entry: BookEntry
+    /// Width of a 2:3 cover; the height of every cover is one and a half times this.
     var width: CGFloat = 150
+    /// On the shelf a wider cover takes the extra width it needs (up to `growth` times
+    /// `width`) and keeps the full height. Elsewhere it is fitted inside `width`.
+    var grows = false
+    /// Told the width the cover is drawn at, so a caller can line text up under it.
+    var onWidth: ((CGFloat) -> Void)?
+
+    static let growth: CGFloat = 1.24
+
+    /// The size a cover of this shape is drawn at: as large as fits the space it may use.
+    static func drawnSize(aspect: CGFloat, width: CGFloat, grows: Bool) -> CGSize {
+        let height = width * 1.5, limit = grows ? width * growth : width
+        // Odd shapes (a strip, a banner) are held to something that still reads as a cover.
+        let aspect = min(max(aspect.isFinite ? aspect : 2.0 / 3.0, 0.45), 1.6)
+        let fitted = height * aspect
+        return fitted <= limit ? CGSize(width: fitted, height: height) : CGSize(width: limit, height: limit / aspect)
+    }
     @Environment(AppModel.self) private var app
     @Environment(\.palette) private var palette
     @State private var image: NSImage?
@@ -56,19 +74,27 @@ struct BookCover: View {
     private var maxPixel: Int { Int((width * 1.5 * displayScale).rounded(.up)) }
 
     var body: some View {
-        let height = width * 1.5
         let corner = max(2, width * 0.018)
         let shown = image ?? entry.coverURL.flatMap { CoverCache.shared.cached(for: $0, version: version, maxPixel: maxPixel) }
+        let aspect = shown.flatMap { $0.size.height > 0 ? $0.size.width / $0.size.height : nil } ?? 2.0 / 3.0
+        let size = Self.drawnSize(aspect: aspect, width: width, grows: grows)
+        return cover(shown, size: size, corner: corner)
+            // The space it stands in: full height always, so a row of covers shares a
+            // baseline; a fitted cover is centred in its 2:3 slot, a grown one sets its own width.
+            .frame(width: grows ? size.width : width, height: width * 1.5, alignment: .bottom)
+            .onChange(of: size.width, initial: true) { onWidth?(size.width) }
+    }
+
+    private func cover(_ shown: NSImage?, size: CGSize, corner: CGFloat) -> some View {
         ZStack {
             if let shown {
                 Image(nsImage: shown)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
             } else {
                 PlaceholderCover(book: entry.book)
             }
         }
-        .frame(width: width, height: height)
+        .frame(width: size.width, height: size.height)
         .overlay(alignment: .leading) {
             // Hinge: a dark crease beside a thin highlight, as on a bound book. Plain
             // alpha, not a blend mode: a blend makes every cover its own offscreen pass.

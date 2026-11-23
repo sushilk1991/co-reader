@@ -65,8 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ⌘Q must reach the file.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task { @MainActor in
-            app?.reader?.close()
-            await WriteQueue.shared.drain()
+            if let app { await app.prepareToQuit() } else { await WriteQueue.shared.drain(within: .seconds(8)) }
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

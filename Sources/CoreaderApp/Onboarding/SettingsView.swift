@@ -205,6 +205,21 @@ struct SettingsView: View {
                     .padding(14)
                     .background(palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.rule, lineWidth: 0.5))
+                    if app.generatesCovers, app.books.contains(where: { $0.book.coverIsGenerated }) {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Redesign every designed cover").font(Typo.ui(13.5, weight: .semibold)).foregroundStyle(palette.ink)
+                                Text("Each gets a new idea, style and colours. Covers that came with a book are left alone.")
+                                    .font(Typo.ui(12)).foregroundStyle(palette.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Button("Redesign All") { app.importer.redesignAllCovers() }
+                                .disabled(!app.busyBooks.isEmpty)
+                        }
+                        .padding(14)
+                        .background(palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.rule, lineWidth: 0.5))
+                    }
                     Text("Updates").labelStyle(palette).padding(.top, 14)
                     HStack(spacing: 12) {
                         Toggle(isOn: Binding(get: { app.updater.checksAutomatically }, set: { app.updater.checksAutomatically = $0 })) {
