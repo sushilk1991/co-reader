@@ -75,4 +75,10 @@ end to end; settings and onboarding screens; `coreader` CLI inside the app bundl
   at most two AI cover jobs at once, in-app updates (`Updater.swift`, `docs/releasing.md`).
 - Not verified on a real screen: the dark PDF tint, hover-driven controls on the shelf (star
   buttons and the menu button appear under the pointer), the updater's sheet on a visible window.
+- 1.0.4: Notebook, a full-window page of every note in the library (`Sources/CoreaderApp/Notebook`,
+  `NotebookQuery` in the core, with tests). Filters by book, kind, colour and words; by book or by
+  date; edit in place; remove with Undo (notices can now carry an action); copy or export the notes
+  shown as Markdown. Driven off-screen: filters, search, sort, edit and remove reach `notes.md`,
+  Undo restores, a row opens its book and Back returns to the notebook. Not driven: the colour
+  submenu and other context-menu items, the export save dialog, drag of an image out of a row.
 - 2026-11-23: repository and releases made public (Sushil's request) after a leak audit of the tree, all history, PRs, release notes and the three DMGs. Updates no longer need `gh`.

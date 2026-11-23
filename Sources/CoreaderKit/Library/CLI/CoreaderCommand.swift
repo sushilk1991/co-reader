@@ -235,7 +235,8 @@ public struct CoreaderCommand: Sendable {
         out.stdout = header + "\n" + sections.joined(separator: "\n")
     }
 
-    private static func exportSection(_ entry: BookEntry, _ annotations: [Annotation]) -> String {
+    /// One book's notes as a Markdown section; the app's notebook copies and exports with it too.
+    public static func exportSection(_ entry: BookEntry, _ annotations: [Annotation]) -> String {
         let book = entry.book
         var lines = ["## \(NotesText.singleLine(book.title))", ""]
         var facts: [String] = []

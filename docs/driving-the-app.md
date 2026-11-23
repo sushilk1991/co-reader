@@ -35,6 +35,7 @@ capture. Wait about a second after a command before capturing; opening a book ta
 | `next`, `prev`, `goto 0.5` | Turn pages, jump to a fraction of the book |
 | `select <text on the visible page>` | Select that text, as dragging over it would |
 | `theme paper\|sepia\|dusk\|night` | Switch theme |
+| `notebook`, `notebook close`, `notebook book=<title> kind=highlights\|notes\|images color=green sort=book\|newest\|oldest text=<words>` | Open the notebook (all notes), optionally filtered |
 | `onboard done` / `onboard reset` | Skip or show the first-run screen |
 | `dump` | Write a line of state to `$COREADER_DEV_STATE/debug.log` |
 

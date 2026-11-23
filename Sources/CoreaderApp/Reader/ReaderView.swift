@@ -87,7 +87,7 @@ private struct ReaderTopBar: View {
                 Button { app.closeReader() } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
-                        Text("Library").font(Typo.ui(13))
+                        Text(app.readerOpenedFromNotebook ? "Notebook" : "Library").font(Typo.ui(13))
                     }
                     .foregroundStyle(palette.secondary)
                     .padding(.horizontal, 8)

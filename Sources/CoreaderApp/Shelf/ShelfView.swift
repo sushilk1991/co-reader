@@ -144,6 +144,7 @@ struct ShelfView: View {
                 .overlay(Capsule().strokeBorder(palette.rule, lineWidth: 0.5))
                 .padding(.trailing, 6)
 
+                ChromeButton(symbol: "text.quote", help: "Notebook: all your notes") { app.openNotebook() }
                 ChromeButton(symbol: "rectangle.stack", help: "Daily review", badge: app.review.due.count) { app.overlay = .review }
                 ChromeButton(symbol: "point.3.connected.trianglepath.dotted", help: "Notes graph") { app.overlay = .graph }
                 ChromeButton(symbol: "gearshape", help: "Settings") { app.overlay = .settings }

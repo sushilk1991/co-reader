@@ -12,6 +12,8 @@ paste and no account to create.
 
 ![The reader: a highlighted passage in Walden, with an answer in the AI panel that links to chapters](docs/screenshots/reader.png)
 
+![The notebook: every highlight and note from every book, filtered here to Meditations](docs/screenshots/notebook.png)
+
 ## What it does
 
 - **One shelf for everything.** EPUB, PDF, MOBI, AZW3 and web articles. Sort into To Read,
@@ -22,6 +24,9 @@ paste and no account to create.
 - **Notes that are yours.** Highlight in five colours, write notes, keep a figure or snip
   any part of a page. Everything goes into one `notes.md` beside the book, with links that
   open the exact passage again.
+- **A notebook of everything.** Every highlight, note and image from every book on one
+  page. Filter by book, kind or colour, search, sort by book or date, edit a note in place,
+  and jump back to the passage.
 - **Ask about what you are reading.** Ask about a selection, the page, the whole book or
   your notes. Answers point to places in the book as buttons that take you there. Explain,
   Look Up and Translate sit next to the selection. Presets: summarize, recap so far, teach

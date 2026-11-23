@@ -9,6 +9,7 @@ func offMain<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async thro
 
 enum Route: Equatable {
     case shelf
+    case notebook
     case reader(bookID: String)
 }
 
@@ -57,6 +58,9 @@ final class AppModel {
     var coverVersion: [String: Int] = [:]
 
     let review: ReviewModel
+    let notebook = NotebookModel()
+    /// Closing the reader goes back to where it was opened from.
+    private(set) var readerOpenedFromNotebook = false
     private(set) var importer: ImportService!
     private var pendingLinks: [URL] = []
 
@@ -64,6 +68,11 @@ final class AppModel {
         let id = UUID()
         var text: String
         var isError = false
+        /// A way back, such as "Undo", offered while the notice is up.
+        var actionTitle: String?
+        var action: (@MainActor () -> Void)?
+
+        static func == (l: Notice, r: Notice) -> Bool { l.id == r.id }
     }
 
     init() {
@@ -151,11 +160,12 @@ final class AppModel {
 
     func entry(_ id: String) -> BookEntry? { books.first { $0.id == id } }
 
-    func show(_ text: String, isError: Bool = false) {
-        let notice = Notice(text: text, isError: isError)
+    func show(_ text: String, isError: Bool = false, actionTitle: String? = nil, action: (@MainActor () -> Void)? = nil) {
+        let notice = Notice(text: text, isError: isError, actionTitle: actionTitle, action: action)
         self.notice = notice
         Task {
-            try? await Task.sleep(for: .seconds(isError ? 7 : 3.5))
+            // Long enough to read it and reach the button.
+            try? await Task.sleep(for: .seconds(isError || action != nil ? 7 : 3.5))
             if self.notice == notice { self.notice = nil }
         }
     }
@@ -230,14 +240,32 @@ final class AppModel {
             reader?.close()
             reader = ReaderModel(entry: entry, app: self)
         }
+        if route == .notebook { readerOpenedFromNotebook = true } else if route == .shelf { readerOpenedFromNotebook = false }
         withAnimation(.easeInOut(duration: 0.28)) { route = .reader(bookID: id) }
         if let link { reader?.follow(link) }
     }
 
     func closeReader() {
         reader?.close()
-        withAnimation(.easeInOut(duration: 0.28)) { route = .shelf }
+        withAnimation(.easeInOut(duration: 0.28)) { route = readerOpenedFromNotebook ? .notebook : .shelf }
+        readerOpenedFromNotebook = false
         reader = nil
+        review.reload(app: self)
+    }
+
+    // MARK: Notebook
+
+    func openNotebook(book id: String? = nil) {
+        if case .reader = route { closeReader() }
+        if let id { notebook.query.bookID = id }
+        overlay = nil
+        withAnimation(.easeInOut(duration: 0.22)) { route = .notebook }
+    }
+
+    func closeNotebook() {
+        notebook.editing = nil
+        withAnimation(.easeInOut(duration: 0.22)) { route = .shelf }
+        // The shelf's note count and the daily review read the same files.
         review.reload(app: self)
     }
 
@@ -296,6 +324,25 @@ extension AppModel {
         case "goto": if let f = Double(arg) { reader?.go(toFraction: f) }
         case "panel": reader?.panel = ReaderPanel(rawValue: arg)
         case "overlay": overlay = ShelfOverlay(rawValue: arg)
+        case "notebook":
+            // notebook | notebook close | notebook book=<title> kind=notes color=green sort=newest text=<words to the end>
+            if arg == "close" { closeNotebook(); break }
+            var query = NotebookQuery()
+            for bit in arg.split(separator: " ") {
+                let pair = bit.split(separator: "=", maxSplits: 1).map(String.init)
+                guard pair.count == 2 else { continue }
+                switch pair[0] {
+                case "book": query.bookID = books.first { $0.book.title.localizedCaseInsensitiveContains(pair[1]) }?.id
+                case "kind": query.kind = NotebookQuery.Kind(rawValue: pair[1])
+                case "color": query.color = HighlightColor(rawValue: pair[1])
+                case "sort": query.sort = NotebookQuery.Sort(rawValue: pair[1]) ?? .book
+                default: break
+                }
+            }
+            if let range = arg.range(of: "text=") { query.text = String(arg[range.upperBound...]) }
+            notebook.query = query
+            openNotebook()
+            DebugHooks.log("notebook notes=\(notebook.notes.count) showing=\(query.apply(to: notebook.notes).count)")
         case "theme": if let t = ReaderTheme(rawValue: arg) { settings.followsSystemAppearance = false; settings.theme = t }
         case "turn": if let t = PageTurn(rawValue: arg) { settings.pageTurn = t }
         case "focus": reader?.toggleFocus()

@@ -44,6 +44,7 @@ struct CoreaderApp: App {
                 Button("Settings…") { app.overlay = .settings }.keyboardShortcut(",", modifiers: .command)
             }
             CommandMenu("Reading") {
+                Button("Notebook") { app.openNotebook() }.keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("Daily Review") { app.overlay = .review }.keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Notes Graph") { app.overlay = .graph }.keyboardShortcut("g", modifiers: [.command, .shift])
                 Divider()
@@ -86,6 +87,9 @@ struct RootView: View {
             switch app.route {
             case .shelf:
                 ShelfView()
+                    .transition(.opacity)
+            case .notebook:
+                NotebookView()
                     .transition(.opacity)
             case .reader:
                 if let reader = app.reader {
@@ -159,12 +163,25 @@ struct RootView: View {
 
 private struct NoticeView: View {
     let notice: AppModel.Notice
+    @Environment(AppModel.self) private var app
     @Environment(\.palette) private var palette
 
     var body: some View {
         HStack(spacing: 8) {
             if notice.isError { Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Color(hex: 0xE2725B)) }
             Text(notice.text).font(Typo.ui(12.5, weight: .medium)).foregroundStyle(palette.page).lineLimit(3)
+            if let title = notice.actionTitle, let action = notice.action {
+                Button {
+                    action()
+                    if app.notice == notice { app.notice = nil }
+                } label: {
+                    Text(title).font(Typo.ui(12.5, weight: .bold)).foregroundStyle(palette.page)
+                        .padding(.horizontal, 10).frame(height: 22)
+                        .background(palette.page.opacity(0.18), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 4)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(palette.ink.opacity(0.94), in: Capsule())
