@@ -75,4 +75,4 @@ end to end; settings and onboarding screens; `coreader` CLI inside the app bundl
   at most two AI cover jobs at once, in-app updates (`Updater.swift`, `docs/releasing.md`).
 - Not verified on a real screen: the dark PDF tint, hover-driven controls on the shelf (star
   buttons and the menu button appear under the pointer), the updater's sheet on a visible window.
-- Updates need a signed-in `gh` while the repository is private.
+- 2026-11-23: repository and releases made public (Sushil's request) after a leak audit of the tree, all history, PRs, release notes and the three DMGs. Updates no longer need `gh`.

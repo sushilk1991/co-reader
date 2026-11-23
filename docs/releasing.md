@@ -7,9 +7,9 @@ run with ad-hoc signing and no notarization.
 
 ## Signing identity
 
-"Developer ID Application: Sushil Kumar (JZFVKGDPU4)" (certificate `XJSB4P7Y5Q`, expires
-2027-12-23) is in the Mac mini's signing keychain; its key and `.p12` are in
-`~/.config/ios-signing/developer-id/`. Run the release there as `ios-build scripts/release.sh`.
+A "Developer ID Application" certificate for team `JZFVKGDPU4`, in the keychain of the Mac
+that builds releases. The key is kept outside this repository. Where the keychain is locked
+by default, run the release as `ios-build scripts/release.sh`.
 
 Renewing it needs the Account Holder signed in at developer.apple.com (Certificates → + →
 Developer ID Application, upload a new signing request): the App Store Connect API key is
@@ -35,9 +35,9 @@ What a release needs for the app to offer it:
 
 The release notes are shown to the reader as "What's new", so write them for readers.
 
-While the repository is private, GitHub hides releases from anonymous requests. The app then
-asks a signed-in `gh` on the same Mac for its token. On a Mac without `gh`, the check says so
-and offers the releases page. Making the releases public removes that dependency.
+The repository is public, so the check needs no sign-in. If the anonymous request is refused
+(GitHub's rate limit, or the repository made private again), the app retries with the token
+of a signed-in `gh` on the same Mac, and otherwise offers the releases page.
 
 To try the whole flow without publishing: copy a Release build somewhere, set its
 `CFBundleShortVersionString` to an older version, sign it with the Developer ID, run it
