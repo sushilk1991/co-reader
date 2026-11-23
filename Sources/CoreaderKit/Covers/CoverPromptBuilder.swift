@@ -6,7 +6,7 @@ public enum CoverPromptBuilder {
     public static let imageHeight = 1536
 
     /// A complete image-generation prompt. Deterministic: the same brief always yields
-    /// the same text, so palette and motif family survive a regenerate.
+    /// the same text. A new design is asked for by raising `brief.variant`.
     public static func prompt(for brief: CoverBrief) -> String {
         let palette = CoverPalette.palette(for: brief)
         let motif = CoverMotif.motif(for: brief)

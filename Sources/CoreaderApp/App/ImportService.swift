@@ -262,8 +262,15 @@ final class ImportService {
         app.coverVersion[id, default: 0] += 1
     }
 
-    private func brief(for book: Book) -> CoverBrief {
-        CoverBrief(title: book.title, authors: book.authors, summary: book.summary, kind: book.kind)
+    private func brief(for book: Book) -> CoverBrief { CoverBrief(book: book) }
+
+    /// A different cover for the same book: redrawn at once with the next palette and
+    /// motif, then replaced by an image model's version if one is available.
+    func redesignCover(for id: String) async {
+        guard let entry = app.entry(id), app.busyBooks[id] == nil else { return }
+        app.update(id) { $0.coverVariant = ($0.coverVariant ?? 0) + 1 }
+        _ = await setProceduralCover(entry)
+        await generateCover(for: id)
     }
 
     private func setProceduralCover(_ entry: BookEntry) async -> BookEntry {

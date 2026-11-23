@@ -37,11 +37,32 @@ private let attention = CoverBrief(
 
 @Test func coverMotifFollowsTheSubjectWhenItCan() {
     let fourier = CoverBrief(title: "The Fourier Transform and Its Applications", summary: "Signals as sums of frequencies.")
-    #expect(CoverMotif.motif(for: fourier) == .waveInterference)
-    #expect(CoverMotif.motif(for: attention) == .network)
+    #expect(CoverMotif.hits(in: fourier).max { $0.value < $1.value }?.key == .waveInterference)
+    #expect(CoverMotif.hits(in: attention).keys.contains(.network))
     // "sun" inside "misunderstood" is not a hint.
-    let plain = CoverBrief(title: "Misunderstood")
-    #expect(CoverMotif.motif(for: plain) == CoverMotif.allCases[Int((plain.seed >> 17) % UInt64(CoverMotif.allCases.count))])
+    #expect(CoverMotif.hits(in: CoverBrief(title: "Misunderstood")).isEmpty)
+}
+
+@Test func coversInOneFieldDoNotAllLookAlike() {
+    // Every one of these matches the "network" keywords; the shelf must still vary.
+    let papers = ["Attention Is All You Need", "Language Models are Few-Shot Learners", "Scaling Laws for Neural Language Models",
+                  "BERT: Pre-training of Deep Bidirectional Transformers", "LLaMA: Open and Efficient Foundation Language Models",
+                  "RoFormer: Enhanced Transformer with Rotary Position Embedding", "Training Compute-Optimal Large Language Models",
+                  "Deep Learning", "Graph Neural Networks", "Neural Machine Translation", "Transformer Circuits", "Network Science"]
+    let motifs = papers.map { CoverMotif.motif(for: CoverBrief(title: $0)) }
+    #expect(Set(motifs).count >= 4)
+    #expect(motifs.filter { $0 == .network }.count <= papers.count * 2 / 3)
+}
+
+@Test func aNewVariantChangesTheCover() {
+    var seen = Set<String>()
+    for variant in 0..<6 {
+        var brief = attention
+        brief.variant = variant
+        seen.insert(CoverPalette.palette(for: brief).name + "/" + CoverMotif.motif(for: brief).rawValue)
+        #expect(ProceduralCover.svg(for: brief) == ProceduralCover.svg(for: brief))
+    }
+    #expect(seen.count >= 4)
 }
 
 @Test func coverBriefShortensLongTitlesAndAuthorLists() {

@@ -519,7 +519,7 @@ struct AppearancePopover: View {
                             VStack(spacing: 5) {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .fill(p.page)
-                                    .frame(width: 58, height: 40)
+                                    .frame(width: 82, height: 44)
                                     .overlay { Text("Aa").font(Typo.display(15)).foregroundStyle(p.ink) }
                                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                                         .strokeBorder(app.theme == theme ? palette.accent : palette.rule, lineWidth: app.theme == theme ? 2 : 0.5))
@@ -572,7 +572,7 @@ struct AppearancePopover: View {
             }
         }
         .padding(18)
-        .frame(width: 320)
+        .frame(width: 400)
         .background(palette.raised)
     }
 }

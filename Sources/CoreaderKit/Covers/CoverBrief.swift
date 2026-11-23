@@ -7,16 +7,20 @@ public struct CoverBrief: Sendable, Equatable {
     public var authors: [String]
     public var summary: String?
     public var kind: BookKind
+    /// 0 for a title's first cover. Asking for a new design raises it, which changes the
+    /// palette, the motif and the geometry while staying repeatable.
+    public var variant: Int
 
-    public init(title: String, authors: [String] = [], summary: String? = nil, kind: BookKind = .book) {
+    public init(title: String, authors: [String] = [], summary: String? = nil, kind: BookKind = .book, variant: Int = 0) {
         self.title = title
         self.authors = authors
         self.summary = summary
         self.kind = kind
+        self.variant = variant
     }
 
     public init(book: Book) {
-        self.init(title: book.title, authors: book.authors, summary: book.summary, kind: book.kind)
+        self.init(title: book.title, authors: book.authors, summary: book.summary, kind: book.kind, variant: book.coverVariant ?? 0)
     }
 
     /// The title as set on a cover: whitespace collapsed, and a long "Main: subtitle"
@@ -47,7 +51,7 @@ public struct CoverBrief: Sendable, Equatable {
         }
     }
 
-    var seed: UInt64 { FNV1a.hash(displayTitle.lowercased()) }
+    var seed: UInt64 { FNV1a.hash(displayTitle.lowercased() + (variant == 0 ? "" : "#\(variant)")) }
 }
 
 /// Ground plus two inks. Both the AI prompt and the procedural cover draw from this one
@@ -86,21 +90,27 @@ public struct CoverPalette: Sendable, Equatable {
                      description: "blue-slate ground, parchment ink, one pale mint accent"),
     ]
 
-    /// Same title, same palette, every time.
+    /// Same title and variant, same palette, every time.
     public static func palette(for brief: CoverBrief) -> CoverPalette {
         all[Int(brief.seed % UInt64(all.count))]
     }
 }
 
-/// Families of abstract geometry. A subject keyword picks the family when one fits
-/// (waves for anything spectral); otherwise the title's seed does.
+/// Families of abstract geometry. The title's seed picks one; subject keywords only
+/// weight the draw (waves are likelier for anything spectral). A hard rule put the same
+/// artwork on every paper in a library about one field.
 public enum CoverMotif: String, Sendable, CaseIterable {
     case concentricArcs, waveInterference, lattice, flowLines, radialBurst, network
 
     public static func motif(for brief: CoverBrief) -> CoverMotif {
-        if let hinted = hinted(by: brief) { return hinted }
+        let hits = hits(in: brief)
+        let best = hits.values.max() ?? 0
+        // The best-matching family gets two tickets in the draw, every other family one.
+        let tickets = allCases.flatMap { motif in
+            Array(repeating: motif, count: best > 0 && hits[motif] == best ? 2 : 1)
+        }
         // Shifted so palette and motif are not locked to each other.
-        return allCases[Int((brief.seed >> 17) % UInt64(allCases.count))]
+        return tickets[Int((brief.seed >> 17) % UInt64(tickets.count))]
     }
 
     private static let keywords: [(CoverMotif, [String])] = [
@@ -118,10 +128,10 @@ public enum CoverMotif: String, Sendable, CaseIterable {
                            "self", "mind", "conscious", "focus", "depth"]),
     ]
 
-    private static func hinted(by brief: CoverBrief) -> CoverMotif? {
+    static func hits(in brief: CoverBrief) -> [CoverMotif: Int] {
         let text = (brief.title + " " + (brief.summary ?? "")).lowercased()
         let words = Set(text.split(whereSeparator: { !$0.isLetter }).map(String.init))
-        var best: (motif: CoverMotif, hits: Int)?
+        var found: [CoverMotif: Int] = [:]
         for (motif, keys) in keywords {
             // Whole words or word prefixes ("optimi" matches "optimisation"), never the
             // middle of a word: "sun" must not fire on "misunderstood".
@@ -129,9 +139,9 @@ public enum CoverMotif: String, Sendable, CaseIterable {
                 let hit = key.contains(" ") ? text.contains(key) : words.contains { $0.hasPrefix(key) }
                 return count + (hit ? 1 : 0)
             }
-            if hits > (best?.hits ?? 0) { best = (motif, hits) }
+            if hits > 0 { found[motif] = hits }
         }
-        return best?.motif
+        return found
     }
 
     /// How to describe the family to an image model: a starting point, not a recipe.

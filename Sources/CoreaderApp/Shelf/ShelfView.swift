@@ -430,7 +430,7 @@ struct BookMenu: View {
             Text("Article").tag(BookKind.article)
         }
         Divider()
-        Button("Design a New Cover") { Task { await app.importer.generateCover(for: entry.id) } }
+        Button("Design a New Cover") { Task { await app.importer.redesignCover(for: entry.id) } }
         Button("Show Notes in Finder") { app.revealInFinder(entry.id) }
         Divider()
         Button("Remove from Library…", role: .destructive) { app.confirmDelete = entry }

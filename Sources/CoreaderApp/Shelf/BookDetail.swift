@@ -21,7 +21,7 @@ struct BookDetail: View {
                     if let status = app.busyBooks[entry.id] {
                         HStack(spacing: 6) { ProgressView().controlSize(.mini); Text(status).font(Typo.ui(11)).foregroundStyle(palette.tertiary) }
                     } else {
-                        Button("Design a new cover") { Task { await app.importer.generateCover(for: entry.id) } }
+                        Button("Design a new cover") { Task { await app.importer.redesignCover(for: entry.id) } }
                             .buttonStyle(.plain).font(Typo.ui(11.5)).foregroundStyle(palette.secondary)
                     }
                 }

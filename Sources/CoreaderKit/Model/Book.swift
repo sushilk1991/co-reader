@@ -83,6 +83,9 @@ public struct Book: Codable, Sendable, Identifiable, Hashable {
     public var coverFile: String?
     /// True when the cover was generated, not taken from the file.
     public var coverIsGenerated: Bool
+    /// How many times a new generated cover was asked for. Each number gives a different
+    /// palette and artwork for the same title; absent means the first.
+    public var coverVariant: Int?
     public var summary: String?
     public var publisher: String?
     public var year: Int?
@@ -187,6 +190,7 @@ public struct Book: Codable, Sendable, Identifiable, Hashable {
         tags = value(.tags, [])
         coverFile = optional(.coverFile)
         coverIsGenerated = value(.coverIsGenerated, false)
+        coverVariant = optional(.coverVariant)
         summary = optional(.summary)
         publisher = optional(.publisher)
         year = optional(.year)

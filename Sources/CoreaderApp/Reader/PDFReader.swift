@@ -131,16 +131,23 @@ final class PDFReaderController: NSObject {
         view.displaysAsBook = false
         view.displayDirection = .vertical
         view.autoScales = true
-        let p = theme.palette
-        view.backgroundColor = NSColor(p.page)
+        // The filters below recolour everything the view draws, its background included.
+        // White is what they turn into the theme's page colour, so the area around the
+        // pages is drawn white, exactly like the PDF's own paper.
+        view.backgroundColor = .white
 
         // One colour matrix maps the PDF's white paper to the theme's page colour and its
         // black ink to the theme's ink, so a PDF sits in the same surface as a book.
-        let page = NSColor(p.page).usingColorSpace(.sRGB) ?? .white
-        let ink = NSColor(p.ink).usingColorSpace(.sRGB) ?? .black
+        // Core Animation runs these filters on linear-light values, so the targets must be
+        // linear too: given sRGB numbers, a near-black page comes out mid-grey.
+        func linear(_ color: Color) -> (r: CGFloat, g: CGFloat, b: CGFloat) {
+            let c = NSColor(color).usingColorSpace(.sRGB) ?? .gray
+            func f(_ v: CGFloat) -> CGFloat { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+            return (f(c.redComponent), f(c.greenComponent), f(c.blueComponent))
+        }
+        let p = theme.palette
         var filters: [CIFilter] = []
-        var from = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0)), to = (r: page.redComponent, g: page.greenComponent, b: page.blueComponent)
-        from = (ink.redComponent, ink.greenComponent, ink.blueComponent)
+        var from = linear(p.ink), to = linear(p.page)
         if theme.isDark {
             // Invert first (keeping hues), then scale into the dark page/ink range.
             if let invert = CIFilter(name: "CIColorInvert") { filters.append(invert) }
