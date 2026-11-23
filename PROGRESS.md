@@ -48,3 +48,11 @@ end to end; settings and onboarding screens; `coreader` CLI inside the app bundl
 - Notarized release build; import of the old CoReader notes (120 files, mostly saved AI
   chats, in the same iCloud folder under `Notes/`; left untouched).
 - Read aloud, citation cards in EPUB, Safari extension, EPUB continuous scroll across chapters.
+
+## 2026-11-23: decisions from Sushil, acted on
+
+- `rebuild` merged into `master` and pushed (258 tests pass on the merge).
+- Mastisk connector installed: patch pushed as Mastisk `7f1bb45`, `mastisk update` run, `mastisk coreader connect` done. It reports 0 books until the real library has a `Books` folder.
+- Old iCloud `CoReader` notes: not imported. All 120 are AI-chat stubs from test runs of the old app (four distinct bodies such as "Summary created.", sources under `/tmp`). Left in place.
+- iOS: the app will ask once for the Coreader folder in iCloud Drive (folder picker), keeping plain files.
+- Release: `scripts/release.sh` and `docs/releasing.md`. Blocked on a Developer ID certificate, which only the Account Holder can create while signed in at developer.apple.com (the agent Chrome is not signed in there).
