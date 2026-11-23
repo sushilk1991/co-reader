@@ -55,4 +55,4 @@ end to end; settings and onboarding screens; `coreader` CLI inside the app bundl
 - Mastisk connector installed: patch pushed as Mastisk `7f1bb45`, `mastisk update` run, `mastisk coreader connect` done. It reports 0 books until the real library has a `Books` folder.
 - Old iCloud `CoReader` notes: not imported. All 120 are AI-chat stubs from test runs of the old app (four distinct bodies such as "Summary created.", sources under `/tmp`). Left in place.
 - iOS: the app will ask once for the Coreader folder in iCloud Drive (folder picker), keeping plain files.
-- Release: `scripts/release.sh` and `docs/releasing.md`. Blocked on a Developer ID certificate, which only the Account Holder can create while signed in at developer.apple.com (the agent Chrome is not signed in there).
+- Release: `scripts/release.sh` and `docs/releasing.md`. Developer ID certificate created (Sushil signed in to the developer portal); `dist/Coreader-1.0.0.dmg` is signed, notarized and stapled.

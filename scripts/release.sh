@@ -42,6 +42,6 @@ fi
 
 sign "$DMG"
 asc notarization submit --file "$DMG" --wait
-asc notarization staple --file "$DMG" --confirm
+xcrun stapler staple "$DMG"   # asc's staple reports a false "artifact changed" error after succeeding
 spctl --assess --type open --context context:primary-signature -v "$DMG"
 echo "Released: $DMG"
