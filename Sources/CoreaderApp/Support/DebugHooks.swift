@@ -163,6 +163,51 @@ enum DebugHooks {
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03 * Double(steps + 2)) { mouse(.leftMouseUp, n[2], n[3]) }
+        case "scroll" where n.count == 3:
+            // `scroll x y dy`: moves the scroll view under that spot by dy points, a little
+            // each frame as a trackpad would. Synthetic wheel events are ignored by
+            // SwiftUI's scroll view, so the clip view is moved directly.
+            guard let (window, point) = target(n[0], n[1]),
+                  let scroller = window.contentView?.hitTest(point)?.enclosingScrollView else { return true }
+            let frames = max(1, Int(abs(n[2]) / 40))
+            for i in 0..<frames {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) / 60) {
+                    let clip = scroller.contentView
+                    let flipped = scroller.documentView?.isFlipped ?? true
+                    var origin = clip.bounds.origin
+                    origin.y += (flipped ? 1 : -1) * n[2] / Double(frames)
+                    clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
+                    scroller.reflectScrolledClipView(clip)
+                }
+            }
+        case "bench" where n.count == 3:
+            // `bench x y dy`: scrolls down dy points and back in 40-point steps, laying out
+            // and committing each step before the next, and logs how long the steps took.
+            // Synchronous, so timer coalescing and App Nap cannot blur the numbers.
+            guard let (window, point) = target(n[0], n[1]),
+                  let scroller = window.contentView?.hitTest(point)?.enclosingScrollView else { return true }
+            let clip = scroller.contentView
+            let sign: Double = (scroller.documentView?.isFlipped ?? true) ? 1 : -1
+            var times: [Double] = []
+            for direction in [1.0, -1.0] {
+                for _ in 0..<max(1, Int(n[2] / 40)) {
+                    let start = DispatchTime.now().uptimeNanoseconds
+                    var origin = clip.bounds.origin
+                    origin.y += sign * direction * 40
+                    clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
+                    scroller.reflectScrolledClipView(clip)
+                    window.layoutIfNeeded()
+                    window.displayIfNeeded()
+                    CATransaction.flush()
+                    RunLoop.current.run(until: Date())   // lets SwiftUI's own observers run
+                    times.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6)
+                }
+            }
+            let sorted = times.sorted()
+            let total = times.reduce(0, +)
+            log(String(format: "bench steps=%d total=%.0fms p50=%.1f p95=%.1f max=%.1f over16=%d over33=%d", times.count, total,
+                       sorted[sorted.count / 2], sorted[sorted.count * 95 / 100], sorted.last ?? 0,
+                       times.filter { $0 > 16.7 }.count, times.filter { $0 > 33.3 }.count))
         case "type" where parts.count > 1:
             let window = NSApp.windows.first { $0.isVisible && $0.firstResponder is NSTextView } ?? mainWindow
             (window?.firstResponder as? NSTextView)?.insertText(parts[1], replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -182,8 +227,27 @@ enum DebugHooks {
         return true
     }
 
+    /// Logs every stretch where the main thread could not run for more than 20 ms:
+    /// what a person feels as a stutter. A background thread pings the main queue.
+    private static func watchForHitches() {
+        let thread = Thread {
+            while true {
+                let sent = DispatchTime.now().uptimeNanoseconds
+                let done = DispatchSemaphore(value: 0)
+                DispatchQueue.main.async { done.signal() }
+                done.wait()
+                let ms = Double(DispatchTime.now().uptimeNanoseconds - sent) / 1e6
+                if ms > 20 { log("hitch \(Int(ms)) ms") }
+                Thread.sleep(forTimeInterval: 0.004)
+            }
+        }
+        thread.qualityOfService = .userInteractive
+        thread.start()
+    }
+
     static func install(commands handler: @escaping (String) -> Void) {
         commandHandler = handler
+        if environment["COREADER_HITCHES"] == "1" { watchForHitches() }
         if isOffscreen {
             NSApp.setActivationPolicy(.accessory)
             // Poll rather than observe: window notifications carry non-Sendable payloads.

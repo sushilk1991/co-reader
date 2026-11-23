@@ -315,6 +315,11 @@ private struct BookCell: View {
     @Environment(\.palette) private var palette
     @State private var hovering = false
 
+
+    // Kept deliberately flat. The grid builds a whole row of these in one frame while
+    // scrolling, so every control here is paid for six or more times at once: buttons,
+    // five-icon ratings, tooltips and menu buttons per cell were what made the shelf
+    // stutter. The menu button exists only under the pointer.
     var body: some View {
         let book = entry.book
         VStack(alignment: .leading, spacing: 0) {
@@ -332,16 +337,12 @@ private struct BookCell: View {
                                 .accessibilityLabel("Read")
                         }
                     }
-                    .overlay(alignment: .bottom) {
+                    .overlay(alignment: .bottomLeading) {
                         if book.status == .reading, book.progress > 0.005 {
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Rectangle().fill(.black.opacity(0.35))
-                                    Rectangle().fill(.white.opacity(0.95)).frame(width: geo.size.width * book.progress)
-                                }
-                            }
-                            .frame(height: 3)
-                            .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                            Rectangle().fill(.white.opacity(0.95))
+                                .frame(width: 150 * min(1, book.progress), height: 3)
+                                .frame(width: 150, alignment: .leading)
+                                .background(.black.opacity(0.35))
                         }
                     }
                     .offset(y: hovering ? -4 : 0)
@@ -369,7 +370,7 @@ private struct BookCell: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Details")
+            .accessibilityHint("Details")
 
             HStack(spacing: 6) {
                 if let status = app.busyBooks[entry.id] {
@@ -377,26 +378,36 @@ private struct BookCell: View {
                     Text(status).font(Typo.ui(10.5)).foregroundStyle(palette.tertiary).lineLimit(1)
                 } else {
                     // Always there, so rating a book never depends on finding a hover state.
-                    StarRating(rating: book.rating, size: 10) { app.setRating($0, for: entry.id) }
-                        .opacity(book.rating == nil && !hovering ? 0.55 : 1)
+                    // The five star buttons are half the cost of building a cell, so until
+                    // the pointer arrives the rating is a picture. A click that somehow
+                    // lands on the picture brings the buttons in.
+                    if hovering {
+                        StarRating(rating: book.rating, size: 10) { app.setRating($0, for: entry.id) }
+                    } else {
+                        Button { hovering = true } label: {
+                            StarPicture(rating: book.rating ?? 0, size: 10).opacity(book.rating == nil ? 0.55 : 1)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityRepresentation { StarRating(rating: book.rating, size: 10) { app.setRating($0, for: entry.id) } }
+                    }
                 }
                 Spacer(minLength: 0)
                 Text(book.format == .article ? "WEB" : book.format.rawValue.uppercased())
                     .font(.system(size: 8.5, weight: .semibold))
                     .tracking(0.5)
                     .foregroundStyle(palette.tertiary)
-                Menu {
-                    BookMenu(entry: entry, shelf: shelf)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(palette.secondary)
-                        .frame(width: 18, height: 16)
-                        .contentShape(Rectangle())
+                let dots = Image(systemName: "ellipsis")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.secondary)
+                    .frame(width: 18, height: 16)
+                    .contentShape(Rectangle())
+                if hovering {
+                    Menu { BookMenu(entry: entry, shelf: shelf) } label: { dots }
+                        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                        .accessibilityLabel("Actions for \(book.title)")
+                } else {
+                    dots.accessibilityHidden(true)
                 }
-                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-                .help("Shelf, rating and more")
-                .accessibilityLabel("Actions for \(book.title)")
             }
             .frame(height: 16)
             .padding(.top, 6)

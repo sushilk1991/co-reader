@@ -9,15 +9,27 @@ final class CoverCache {
     static let shared = CoverCache()
     private let cache = NSCache<NSString, NSImage>()
 
+    private static func key(_ url: URL, _ version: Int, _ maxPixel: Int) -> NSString {
+        "\(url.path)#\(version)#\(maxPixel)" as NSString
+    }
+
+    /// Already decoded? Answered at once, so a cell scrolling back into view shows its
+    /// cover in the same frame and never flashes the placeholder.
+    func cached(for url: URL, version: Int, maxPixel: Int) -> NSImage? {
+        cache.object(forKey: Self.key(url, version, maxPixel))
+    }
+
     func image(for url: URL, version: Int, maxPixel: Int) async -> NSImage? {
-        let key = "\(url.path)#\(version)#\(maxPixel)" as NSString
+        let key = Self.key(url, version, maxPixel)
         if let hit = cache.object(forKey: key) { return hit }
-        let image: NSImage? = await Task.detached(priority: .utility) {
+        let image: NSImage? = await Task.detached(priority: .userInitiated) {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceThumbnailMaxPixelSize: maxPixel,
                 kCGImageSourceCreateThumbnailWithTransform: true,
+                // Decode now, on this thread; otherwise the first draw does it on the main one.
+                kCGImageSourceShouldCacheImmediately: true,
             ]
             guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
             return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
@@ -36,42 +48,53 @@ struct BookCover: View {
     @Environment(\.palette) private var palette
     @State private var image: NSImage?
 
+    @Environment(\.displayScale) private var displayScale
+
     private var version: Int { app.coverVersion[entry.id] ?? 0 }
+    /// Decoded at the size it is drawn (the taller side, in pixels), so nothing is
+    /// resampled while scrolling.
+    private var maxPixel: Int { Int((width * 1.5 * displayScale).rounded(.up)) }
 
     var body: some View {
         let height = width * 1.5
+        let corner = max(2, width * 0.018)
+        let shown = image ?? entry.coverURL.flatMap { CoverCache.shared.cached(for: $0, version: version, maxPixel: maxPixel) }
         ZStack {
-            if let image {
-                Image(nsImage: image)
+            if let shown {
+                Image(nsImage: shown)
                     .resizable()
-                    .interpolation(.high)
                     .aspectRatio(contentMode: .fill)
             } else {
                 PlaceholderCover(book: entry.book)
             }
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: max(2, width * 0.018), style: .continuous))
         .overlay(alignment: .leading) {
-            // Hinge: a dark crease beside a thin highlight, as on a bound book.
+            // Hinge: a dark crease beside a thin highlight, as on a bound book. Plain
+            // alpha, not a blend mode: a blend makes every cover its own offscreen pass.
             LinearGradient(stops: [
-                .init(color: .black.opacity(0.22), location: 0),
-                .init(color: .white.opacity(0.16), location: 0.45),
-                .init(color: .black.opacity(0.10), location: 0.75),
+                .init(color: .black.opacity(0.20), location: 0),
+                .init(color: .white.opacity(0.14), location: 0.45),
+                .init(color: .black.opacity(0.08), location: 0.75),
                 .init(color: .clear, location: 1),
             ], startPoint: .leading, endPoint: .trailing)
             .frame(width: max(5, width * 0.055))
-            .blendMode(.overlay)
         }
+        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: max(2, width * 0.018), style: .continuous)
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .strokeBorder(.black.opacity(0.10), lineWidth: 0.5)
         }
-        .shadow(color: .black.opacity(0.10), radius: 1, x: 0, y: 1)
-        .shadow(color: .black.opacity(0.18), radius: width * 0.07, x: 0, y: width * 0.05)
+        // The shadow belongs to a plain shape behind the cover: cheap to draw, where a
+        // shadow on the picture itself is blurred from the picture's pixels every time.
+        .background {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(.black.opacity(0.9))
+                .shadow(color: .black.opacity(0.24), radius: width * 0.06, x: 0, y: width * 0.045)
+        }
         .task(id: "\(entry.book.coverFile ?? "")#\(version)") {
             guard let url = entry.coverURL else { image = nil; return }
-            image = await CoverCache.shared.image(for: url, version: version, maxPixel: Int(width * 3))
+            image = await CoverCache.shared.image(for: url, version: version, maxPixel: maxPixel)
         }
         .accessibilityLabel("Cover of \(entry.book.title)")
     }
@@ -110,6 +133,29 @@ struct PlaceholderCover: View {
     }
 }
 
+/// The rating as one drawing, laid out exactly like `StarRating`, with nothing to click.
+struct StarPicture: View {
+    var rating: Int
+    var size: CGFloat = 12
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        let step = size * 1.3
+        let gold = Color(hex: 0xD99A2B), empty = palette.tertiary.opacity(0.7)
+        Canvas { context, canvas in
+            for star in 1...5 {
+                let symbol = context.resolve(Text(Image(systemName: star <= rating ? "star.fill" : "star"))
+                    .font(.system(size: size, weight: .medium))
+                    .foregroundStyle(star <= rating ? gold : empty))
+                let width = symbol.measure(in: canvas).width
+                context.draw(symbol, at: CGPoint(x: step * Double(star - 1) + width / 2, y: canvas.height / 2))
+            }
+        }
+        .frame(width: step * 5, height: size * 1.4)
+        .contentShape(Rectangle())
+    }
+}
+
 struct StarRating: View {
     var rating: Int?
     var size: CGFloat = 12
@@ -118,22 +164,28 @@ struct StarRating: View {
     @State private var hover: Int?
 
     var body: some View {
-        HStack(spacing: size * 0.18) {
+        let shown = hover ?? rating ?? 0
+        let step = size * 1.3   // one star plus the gap after it
+        HStack(spacing: 0) {
             ForEach(1...5, id: \.self) { star in
-                let filled = star <= (hover ?? rating ?? 0)
-                Image(systemName: filled ? "star.fill" : "star")
-                    .font(.system(size: size, weight: .medium))
-                    .foregroundStyle(filled ? Color(hex: 0xD99A2B) : palette.tertiary.opacity(0.7))
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        guard onChange != nil else { return }
-                        hover = inside ? star : (hover == star ? nil : hover)
-                    }
-                    .onTapGesture {
-                        // Clicking the current rating clears it.
-                        onChange?(rating == star ? nil : star)
-                    }
+                Button {
+                    // Clicking the current rating clears it.
+                    onChange?(rating == star ? nil : star)
+                } label: {
+                    Image(systemName: star <= shown ? "star.fill" : "star")
+                        .font(.system(size: size, weight: .medium))
+                        .foregroundStyle(star <= shown ? Color(hex: 0xD99A2B) : palette.tertiary.opacity(0.7))
+                        .frame(width: step, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
+        }
+        .allowsHitTesting(onChange != nil)
+        // One hover tracker for the row, not one per star: a shelf holds this view once
+        // per book, and five trackers each was the costliest part of a cell.
+        .onContinuousHover { phase in
+            if case .active(let point) = phase { hover = min(5, max(1, Int(point.x / step) + 1)) } else { hover = nil }
         }
         .accessibilityElement()
         .accessibilityLabel(rating.map { "\($0) of 5 stars" } ?? "Not rated")

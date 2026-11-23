@@ -20,6 +20,7 @@ capture. Wait about a second after a command before capturing; opening a book ta
 | --- | --- |
 | `click x y`, `dclick x y`, `rclick x y` | Click, double-click, right-click |
 | `move x y` | Move the pointer (hover) |
+| `scroll x y dy` | Scroll the view under that point by `dy` points, a little each frame |
 | `drag x1 y1 x2 y2` | Press, drag, release |
 | `type some text` | Type into the focused text field |
 | `key return` | Also `escape`, `tab`, `left`, `right`, `up`, `down`, `delete`, `space` |
@@ -44,3 +45,10 @@ Limits: the capture is drawn by the app itself, so text selection tint inside a 
 window shadows are not shown, and a small smudge can appear where a floating bar overlaps
 book text. The system file dialog and native menus cannot be captured or driven: use the
 shortcuts above and press `key escape` if one opens.
+
+Scroll cost: `bench x y dy` scrolls down `dy` points and back in 40-point steps, finishing each step
+before the next, and logs `bench steps=… total=… p95=… max=… over16=…` (milliseconds per step). Use this
+to compare two builds; it is steady where wall-clock stutter counts are not.
+
+Stutter: start with `COREADER_HITCHES=1` (`scripts/dev_start.sh COREADER_HITCHES=1`) and every stretch
+where the main thread was blocked for more than 20 ms is written to `debug.log` as `hitch N ms`.

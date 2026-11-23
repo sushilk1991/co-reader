@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 final class ImportService {
     private unowned let app: AppModel
     private var probe: BookProbe?
+    private let coverSlots = Slots(2)
 
     init(app: AppModel) { self.app = app }
 
@@ -289,6 +290,10 @@ final class ImportService {
         guard let backend = await generator.availableBackends().first else { return }
         app.busyBooks[id] = "Designing a cover…"
         defer { app.busyBooks[id] = nil }
+        // Two at a time. Each one runs an agent CLI and an image model; a dozen at once,
+        // after adding a dozen papers, was enough to make the whole Mac sluggish.
+        await coverSlots.wait()
+        defer { coverSlots.signal() }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("coreader-cover-" + UUID().uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -379,5 +384,23 @@ final class BookProbe {
                 finish()
             }
         }
+    }
+}
+
+/// A counting semaphore for main-actor work: at most `count` holders, the rest wait in line.
+@MainActor
+final class Slots {
+    private var free: Int
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(_ count: Int) { free = count }
+
+    func wait() async {
+        if free > 0 { free -= 1; return }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func signal() {
+        if waiting.isEmpty { free += 1 } else { waiting.removeFirst().resume() }
     }
 }
