@@ -21,3 +21,24 @@ refused for this certificate type.
 Gatekeeper reports "Notarized Developer ID" for both the DMG and the app inside. The
 hardened build was driven off-screen: it starts, finds the agent CLIs, imports an EPUB and
 a PDF and opens the reader. Not checked: opening the DMG on another Mac.
+
+## In-app updates
+
+The app checks `https://api.github.com/repos/sushilk1991/co-reader/releases/latest` once a day
+at launch and from **Coreader > Check for Updates…** (`Sources/CoreaderApp/App/Updater.swift`).
+What a release needs for the app to offer it:
+
+- a tag that is the version (`v1.0.3`), newer than the running app's;
+- not a draft or pre-release;
+- the `.dmg` attached, containing `Coreader.app` signed by the same team as the running copy.
+  The updater refuses anything else, so an unsigned or re-signed build cannot be pushed this way.
+
+The release notes are shown to the reader as "What's new", so write them for readers.
+
+While the repository is private, GitHub hides releases from anonymous requests. The app then
+asks a signed-in `gh` on the same Mac for its token. On a Mac without `gh`, the check says so
+and offers the releases page. Making the releases public removes that dependency.
+
+To try the whole flow without publishing: copy a Release build somewhere, set its
+`CFBundleShortVersionString` to an older version, sign it with the Developer ID, run it
+off-screen and send `update check`, then `update install`.

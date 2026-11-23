@@ -64,3 +64,15 @@ end to end; settings and onboarding screens; `coreader` CLI inside the app bundl
 - Codex audit, 12 findings. Fixed: foreign README overwritten, evicted `notes.md`/`book.json` handling, external edit lost between read and write, unusable library folder remembered, Tailscale CLI mode, best-candidate choice and no redirects in discovery, stale results after leaving the screen, command installer, Intel build (now universal).
 - Left as they are, by decision: auto-connect of a local Mastisk and AI covers on by default (both asked for by Sushil); the off-screen debug hooks stay in Release builds (they need environment variables set by whoever launches the app).
 - Not verified: discovery through `tailscale status` on a second Mac (the Mac mini is its own Mastisk host, so only the remembered-address path ran against the real server), the Intel slice, opening the DMG on another Mac.
+
+## 2026-11-23: 1.0.1 to 1.0.3
+
+- 1.0.1: app icon (there was no asset catalog). `scripts/make_app_icon.py` redraws it.
+- 1.0.2: drawn covers vary (keywords weight the motif instead of deciding it; `Book.coverVariant`
+  gives "Design a New Cover" a new design each time), dark PDF tint fixed (filters run in linear
+  light), appearance popover no longer clipped.
+- 1.0.3: shelf scrolling (see the commit message for numbers; `bench` debug command measures it),
+  at most two AI cover jobs at once, in-app updates (`Updater.swift`, `docs/releasing.md`).
+- Not verified on a real screen: the dark PDF tint, hover-driven controls on the shelf (star
+  buttons and the menu button appear under the pointer), the updater's sheet on a visible window.
+- Updates need a signed-in `gh` while the repository is private.

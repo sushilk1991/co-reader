@@ -205,6 +205,26 @@ struct SettingsView: View {
                     .padding(14)
                     .background(palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.rule, lineWidth: 0.5))
+                    Text("Updates").labelStyle(palette).padding(.top, 14)
+                    HStack(spacing: 12) {
+                        Toggle(isOn: Binding(get: { app.updater.checksAutomatically }, set: { app.updater.checksAutomatically = $0 })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Check for updates automatically").frame(maxWidth: .infinity, alignment: .leading).font(Typo.ui(13.5, weight: .semibold)).foregroundStyle(palette.ink)
+                                Text("You have Coreader \(app.updater.currentVersion?.description ?? ""). Checked once a day when the app opens.")
+                                    .font(Typo.ui(12)).foregroundStyle(palette.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                        Button("Check Now") {
+                            dismiss()
+                            // After this sheet has gone: only one sheet can be up at a time.
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { app.updater.check(byRequest: true) }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.rule, lineWidth: 0.5))
                 }
             }
         }

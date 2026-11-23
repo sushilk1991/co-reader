@@ -23,6 +23,7 @@ enum ShelfOverlay: String, Identifiable {
 final class AppModel {
     private(set) var library: LibraryStore
     let notes = NotesStore()
+    let updater = Updater()
     let textStore = BookTextStore()
 
     var books: [BookEntry] = []
@@ -106,6 +107,7 @@ final class AppModel {
             }
         }
         review.reload(app: self)
+        updater.checkAtLaunch()
         let links = pendingLinks
         pendingLinks = []
         for url in links { handle(url: url) }
@@ -324,6 +326,14 @@ extension AppModel {
                 skillJob?.start(app: self)
             }
         case "skillstate": DebugHooks.log("skill phase=\(String(describing: skillJob?.phase)) activity=\(skillJob?.activity ?? "") log=\(skillJob?.log.suffix(3) ?? [])")
+        case "update":
+            switch arg {
+            case "check": updater.check(byRequest: true)
+            case "install": if case .available(let release) = updater.phase { updater.install(release) }
+            case "dismiss": updater.dismiss()
+            default: break
+            }
+            DebugHooks.log("update phase=\(updater.phase) presented=\(updater.isPresented)")
         case "dump":
             DebugHooks.log("books=\(books.count) route=\(route) agents=\(agents.map(\.kind.rawValue)) reader.loading=\(String(describing: reader?.isLoading)) annotations=\(reader?.annotations.count ?? -1) fraction=\(reader?.fraction ?? -1) chat=\(reader?.chat.messages.last?.text.prefix(300) ?? "")")
         default: DebugHooks.log("unknown command: \(line)")

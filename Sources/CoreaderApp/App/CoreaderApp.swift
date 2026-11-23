@@ -37,6 +37,9 @@ struct CoreaderApp: App {
                 Button("Add Books…") { app.importer.chooseFiles() }.keyboardShortcut("o", modifiers: .command)
                 Button("Add from Link…") { app.overlay = .addLink }.keyboardShortcut("o", modifiers: [.command, .shift])
             }
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { app.updater.check(byRequest: true) }
+            }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { app.overlay = .settings }.keyboardShortcut(",", modifiers: .command)
             }
@@ -121,6 +124,12 @@ struct RootView: View {
             .environment(app)
             .environment(\.palette, palette)
             .preferredColorScheme(app.theme.isDark ? .dark : .light)
+        }
+        .sheet(isPresented: Binding(get: { app.updater.isPresented }, set: { if !$0 { app.updater.dismiss() } })) {
+            UpdateView()
+                .environment(app)
+                .environment(\.palette, palette)
+                .preferredColorScheme(app.theme.isDark ? .dark : .light)
         }
         .sheet(item: $app.skillJob) { job in
             SkillBuilderView(job: job)
