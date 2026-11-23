@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Save to Coreader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <img src="icons/icon48.png" width="24" height="24" alt="">
+      <h1>Coreader</h1>
+    </header>
+
+    <section class="page" aria-label="Current page">
+      <p id="page-title" class="page-title">&nbsp;</p>
+      <p id="page-host" class="page-host">&nbsp;</p>
+    </section>
+
+    <div class="actions">
+      <button id="save-page" class="primary" type="button" disabled>Save page</button>
+      <button id="save-selection" type="button" disabled>Save selection</button>
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p id="shortcut" class="hint" hidden></p>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "coreader-web-extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check background.js && node --check save.js && node --check link.js && node --check popup.js",
+    "test": "node --test test/"
+  }
+}

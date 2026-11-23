@@ -1,59 +1,111 @@
-name: CoReader
+name: Coreader
 options:
   createIntermediateGroups: true
   developmentLanguage: en
   groupSortPosition: top
 
+packages:
+  Coreader:
+    path: .
+
 settings:
   base:
     SWIFT_VERSION: 6.0
     MACOSX_DEPLOYMENT_TARGET: "15.0"
-    CURRENT_PROJECT_VERSION: 3
-    MARKETING_VERSION: 0.2.1
-    CODE_SIGNING_ALLOWED: NO
-    CODE_SIGNING_REQUIRED: NO
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 1.0.0
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
 
 targets:
-  CoReaderApp:
+  Coreader:
     type: application
     platform: macOS
     deploymentTarget: "15.0"
     sources:
-      - path: Sources/CoReaderApp
+      - path: Sources/CoreaderApp
+        excludes:
+          - "Web/**"
+      # Folder reference: the web reader loads modules by relative path, so the tree
+      # must reach the bundle unflattened.
+      - path: Sources/CoreaderApp/Web
+        type: folder
+        buildPhase: resources
+      # The agent skill ships inside the app so Settings can install it.
+      - path: integrations/skill
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: Coreader
+        product: CoreaderKit
+      # The `coreader` command rides inside the app (Contents/Helpers) and is linked
+      # into ~/.local/bin from Settings.
+      - target: CoreaderCLI
+        embed: false
+        link: false
+      - sdk: PDFKit.framework
+      - sdk: WebKit.framework
+    postBuildScripts:
+      - name: Embed coreader command
+        script: |
+          mkdir -p "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          cp -f "${BUILT_PRODUCTS_DIR}/coreader" "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers/coreader"
+        inputFiles:
+          - ${BUILT_PRODUCTS_DIR}/coreader
+        outputFiles:
+          - ${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers/coreader
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sushil.CoReaderApp
-        PRODUCT_NAME: CoReader
-        PRODUCT_MODULE_NAME: CoReaderApp
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: CoReader
-        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
-    dependencies:
-      - sdk: PDFKit.framework
-      - sdk: libsqlite3.tbd
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.sushil.coreader
+        PRODUCT_NAME: Coreader
+        PRODUCT_MODULE_NAME: CoreaderApp
+        ENABLE_HARDENED_RUNTIME: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Sources/CoreaderApp/Info.plist
+      properties:
+        CFBundleDisplayName: Coreader
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: "15.0"
+        NSHumanReadableCopyright: ""
+        CFBundleURLTypes:
+          - CFBundleURLName: com.sushil.coreader
+            CFBundleURLSchemes: [coreader]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: EPUB
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [org.idpf.epub-container]
+          - CFBundleTypeName: PDF
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.adobe.pdf]
+          - CFBundleTypeName: Kindle book
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            CFBundleTypeExtensions: [mobi, azw3, azw, prc]
 
-  CoReaderAppTests:
-    type: bundle.unit-test
+  CoreaderCLI:
+    type: tool
     platform: macOS
     deploymentTarget: "15.0"
     sources:
-      - path: Tests/CoReaderAppTests
+      - path: Sources/coreader-cli
     dependencies:
-      - target: CoReaderApp
+      - package: Coreader
+        product: CoreaderKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sushil.CoReaderAppTests
-        GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/CoReader.app/Contents/MacOS/CoReader"
-        BUNDLE_LOADER: "$(TEST_HOST)"
+        PRODUCT_NAME: coreader
+        PRODUCT_BUNDLE_IDENTIFIER: com.sushil.coreader.cli
+        SKIP_INSTALL: YES
 
 schemes:
-  CoReaderApp:
+  Coreader:
     build:
       targets:
-        CoReaderApp: all
-        CoReaderAppTests: [test]
-    test:
-      gatherCoverageData: false
-      targets:
-        - name: CoReaderAppTests
+        Coreader: all
