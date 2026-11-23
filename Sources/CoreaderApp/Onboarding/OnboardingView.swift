@@ -34,7 +34,7 @@ struct OnboardingView: View {
                     Text("Everything here is optional and can be changed later in Settings.")
                         .font(Typo.ui(12.5)).foregroundStyle(palette.secondary).padding(.bottom, 8)
                     LibraryLocationRow()
-                    ConnectionsList()
+                    ConnectionsList(connectsMastiskAutomatically: true)
                 }
                 .transition(.opacity)
             }

@@ -80,10 +80,30 @@ public struct LibraryStore: Sendable {
 
     public func prepare() throws {
         try FileManager.default.createDirectory(at: booksRoot, withIntermediateDirectories: true)
-        let existing = try? String(contentsOf: readmeURL, encoding: .utf8)
-        if LibraryReadme.needsWrite(existing: existing) {
-            try AtomicFile.write(LibraryReadme.text, to: readmeURL)
+        if FileManager.default.fileExists(atPath: readmeURL.path) {
+            // Unreadable (evicted by iCloud, not UTF-8) counts as not ours: leave it.
+            guard let existing = try? String(contentsOf: readmeURL, encoding: .utf8),
+                  LibraryReadme.needsWrite(existing: existing) else { return }
         }
+        try AtomicFile.write(LibraryReadme.text, to: readmeURL)
+    }
+
+    /// Asks iCloud for the `book.json` of every book folder whose metadata is not on
+    /// this Mac yet, and returns how many were asked for. Such books are missing from
+    /// `allBooks()` until the download lands, so the caller should list again shortly.
+    public func requestEvictedMetadata() -> Int {
+        let fm = FileManager.default
+        guard let folders = try? fm.contentsOfDirectory(at: booksRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return 0 }
+        var asked = 0
+        for folder in folders {
+            let metadata = folder.appendingPathComponent("book.json")
+            let placeholder = folder.appendingPathComponent(".book.json.icloud")
+            let present = fm.fileExists(atPath: metadata.path)
+            if present, (try? Data(contentsOf: metadata)) != nil { continue }
+            guard present || fm.fileExists(atPath: placeholder.path) else { continue }
+            if (try? fm.startDownloadingUbiquitousItem(at: metadata)) != nil { asked += 1 }
+        }
+        return asked
     }
 
     /// Every readable book, sorted by title. A folder whose `book.json` is missing or

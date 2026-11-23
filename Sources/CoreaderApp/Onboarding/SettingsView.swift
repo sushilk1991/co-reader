@@ -9,6 +9,9 @@ struct ConnectionsList: View {
     @State private var cliInstalled = Integrations.isCLIInstalled
     @State private var skillInstalled = Integrations.isSkillInstalled
     @State private var working = false
+    /// First run: a Mastisk found on this Mac is connected without asking. It is one
+    /// reversible setting, and the row shows a Disconnect button afterwards.
+    var connectsMastiskAutomatically = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,8 +39,13 @@ struct ConnectionsList: View {
                     Button("Install") {
                         do {
                             try Integrations.installCLI()
-                            try Integrations.installSkill()
-                            app.show("Installed. Agents pick it up in their next session.")
+                            // The command is useful on its own when no agent is set up yet.
+                            if Integrations.skillHomes.isEmpty {
+                                app.show("Installed the coreader command. The skill is added once an agent (Claude Code, Codex) is set up.")
+                            } else {
+                                try Integrations.installSkill()
+                                app.show("Installed. Agents pick it up in their next session.")
+                            }
                         } catch {
                             app.show(error.localizedDescription, isError: true)
                         }
@@ -49,10 +57,12 @@ struct ConnectionsList: View {
             divider
             row(symbol: "brain", title: "Mastisk", detail: mastiskDetail) {
                 switch mastisk {
-                case .disconnected:
+                case .disconnected, .localOtherFolder:
                     Button("Connect") { toggleMastisk(true) }.disabled(working)
-                case .connected:
+                case .connected(_, host: nil):
                     Button("Disconnect") { toggleMastisk(false) }.disabled(working)
+                case .connected:
+                    Label("Connected", systemImage: "checkmark").foregroundStyle(palette.tertiary).font(Typo.ui(12))
                 case .none:
                     ProgressView().controlSize(.small)
                 default:
@@ -62,17 +72,31 @@ struct ConnectionsList: View {
         }
         .background(palette.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.rule, lineWidth: 0.5))
-        .task { mastisk = await Integrations.mastiskState() }
+        .task(id: app.library.root) {
+            let root = app.library.root
+            var state = await Integrations.mastiskState(libraryRoot: root)
+            if state == .disconnected, connectsMastiskAutomatically, !Task.isCancelled {
+                working = true
+                state = await Integrations.connectMastisk(true, libraryRoot: root)
+                working = false
+            }
+            // The answer may arrive after the library changed or the screen was left.
+            if !Task.isCancelled, root == app.library.root { mastisk = state }
+        }
     }
 
     private var mastiskDetail: String {
         switch mastisk {
-        case .none: "Checking…"
-        case .notInstalled: "Not on this Mac. Coreader works on its own; your notes stay plain Markdown either way."
-        case .needsConnector: "This version of Mastisk cannot read Coreader notes yet. Update Mastisk with the Coreader connector, then connect here."
-        case .disconnected: "Mastisk can index your reading notes where they are. Nothing is copied, so there is one version of every note."
-        case .connected(let books): "Connected. Mastisk reads \(books) book\(books == 1 ? "" : "s") of notes in place."
-        case .remote: "Mastisk runs on another machine here, so it cannot read this library."
+        case .none: "Looking on this Mac and your other machines…"
+        case .notFound: "Not found on this Mac or your tailnet. Coreader works on its own; your notes stay plain Markdown either way."
+        case .needsConnector(let host): "Mastisk\(host.map { " on \($0)" } ?? "") cannot read Coreader notes yet. Update it to a version with the Coreader connector."
+        case .disconnected: "Mastisk can make your reading notes searchable. It indexes their text; the files stay here, so there is one version of every note."
+        case .localOtherFolder: "Mastisk is set to read a different folder than this library. Connect to point it here."
+        case .connected(let books, let host):
+            "Connected\(host.map { " to Mastisk on \($0)" } ?? ""). "
+                + (books == 0 ? "Your notes appear in Mastisk a few minutes after your first highlight\(host == nil ? "" : " syncs")." : "It reads \(books) book\(books == 1 ? "" : "s") of notes in place.")
+        case .remoteOff(let host): "Found Mastisk on \(host), but its Coreader connector is off. Run “mastisk coreader connect” there."
+        case .remoteOtherFolder(let host): "Mastisk on \(host) reads a different folder. Keep this library in iCloud Drive / Coreader so both machines see the same notes."
         case .unknown(let reason): reason
         }
     }
@@ -80,7 +104,7 @@ struct ConnectionsList: View {
     private func toggleMastisk(_ connect: Bool) {
         working = true
         Task {
-            mastisk = await Integrations.connectMastisk(connect)
+            mastisk = await Integrations.connectMastisk(connect, libraryRoot: app.library.root)
             working = false
         }
     }

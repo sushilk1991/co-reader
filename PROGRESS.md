@@ -56,3 +56,11 @@ end to end; settings and onboarding screens; `coreader` CLI inside the app bundl
 - Old iCloud `CoReader` notes: not imported. All 120 are AI-chat stubs from test runs of the old app (four distinct bodies such as "Summary created.", sources under `/tmp`). Left in place.
 - iOS: the app will ask once for the Coreader folder in iCloud Drive (folder picker), keeping plain files.
 - Release: `scripts/release.sh` and `docs/releasing.md`. Developer ID certificate created (Sushil signed in to the developer portal); `dist/Coreader-1.0.0.dmg` is signed, notarized and stapled.
+
+## 2026-11-23: pre-release audit and 1.0.0 release
+
+- Mastisk is found automatically: this Mac first, then tailnet computers (`MastiskLocator`, `integrations/mastisk/CONNECT.md`). First-run onboarding connects a local Mastisk without asking (Sushil's request).
+- Mastisk connector fetches iCloud-evicted notes before indexing (Mastisk `93655da`); checked on a real evicted `notes.md` on the Mac mini.
+- Codex audit, 12 findings. Fixed: foreign README overwritten, evicted `notes.md`/`book.json` handling, external edit lost between read and write, unusable library folder remembered, Tailscale CLI mode, best-candidate choice and no redirects in discovery, stale results after leaving the screen, command installer, Intel build (now universal).
+- Left as they are, by decision: auto-connect of a local Mastisk and AI covers on by default (both asked for by Sushil); the off-screen debug hooks stay in Release builds (they need environment variables set by whoever launches the app).
+- Not verified: discovery through `tailscale status` on a second Mac (the Mac mini is its own Mastisk host, so only the remembered-address path ran against the real server), the Intel slice, opening the DMG on another Mac.

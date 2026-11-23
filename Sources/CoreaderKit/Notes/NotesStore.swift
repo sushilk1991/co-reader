@@ -5,12 +5,48 @@ import Foundation
 public struct NotesStore: Sendable {
     public init() {}
 
+    /// `notes.md` exists in iCloud but its contents are not on this Mac.
+    public struct NotesNotDownloaded: LocalizedError {
+        public var errorDescription: String? { "This book's notes are still downloading from iCloud. Try again in a moment." }
+    }
+
     /// The parsed file, or an empty document for a book without notes yet.
     public func document(for entry: BookEntry) throws -> NotesDocument {
         guard FileManager.default.fileExists(atPath: entry.notesURL.path) else {
+            // Older iCloud leaves ".notes.md.icloud" in place of an evicted file. Treating
+            // that as "no notes yet" would write a new file over the real one.
+            let placeholder = entry.notesURL.deletingLastPathComponent().appendingPathComponent(".notes.md.icloud")
+            if FileManager.default.fileExists(atPath: placeholder.path) {
+                try? FileManager.default.startDownloadingUbiquitousItem(at: entry.notesURL)
+                throw NotesNotDownloaded()
+            }
             return NotesDocument(bookID: entry.book.id, title: entry.book.title, authors: entry.book.authors)
         }
         return NotesDocument.parse(try String(contentsOf: entry.notesURL, encoding: .utf8))
+    }
+
+    private static func fingerprint(_ url: URL) -> [String] {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return ["absent"] }
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        return ["\(modified)", "\(attributes[.size] ?? 0)", "\(attributes[.systemFileNumber] ?? 0)"]
+    }
+
+    /// Read, change, write. If another app (Obsidian, an agent, iCloud) replaced the file
+    /// between the read and the write, the change is applied again to the newer file
+    /// instead of writing the older one back over it.
+    private func mutate<T>(_ entry: BookEntry, _ change: (inout NotesDocument) throws -> T?) throws -> T? {
+        var attempt = 0
+        while true {
+            let before = Self.fingerprint(entry.notesURL)
+            var document = try document(for: entry)
+            guard let result = try change(&document) else { return nil }
+            if Self.fingerprint(entry.notesURL) != before, attempt < 3 {
+                attempt += 1
+                continue
+            }
+            try write(document, for: entry)
+            return result
+        }
     }
 
     /// Writes the document, stamping it with the book's current title, authors and id
@@ -30,13 +66,14 @@ public struct NotesStore: Sendable {
     }
 
     public func upsert(_ annotation: Annotation, in entry: BookEntry) throws {
-        var document = try document(for: entry)
-        if let index = document.annotations.firstIndex(where: { $0.id == annotation.id }) {
-            document.annotations[index] = annotation
-        } else {
-            document.annotations.append(annotation)
+        _ = try mutate(entry) { document -> Bool? in
+            if let index = document.annotations.firstIndex(where: { $0.id == annotation.id }) {
+                document.annotations[index] = annotation
+            } else {
+                document.annotations.append(annotation)
+            }
+            return true
         }
-        try write(document, for: entry)
     }
 
     /// Applies a change to the annotation as it is in the file right now, not to a copy
@@ -44,20 +81,19 @@ public struct NotesStore: Sendable {
     /// Returns the annotation as written, or nil when it is no longer in the file.
     @discardableResult
     public func update(id: String, in entry: BookEntry, _ change: (inout Annotation) -> Void) throws -> Annotation? {
-        var document = try document(for: entry)
-        guard let index = document.annotations.firstIndex(where: { $0.id == id }) else { return nil }
-        change(&document.annotations[index])
-        try write(document, for: entry)
-        return document.annotations[index]
+        try mutate(entry) { document -> Annotation? in
+            guard let index = document.annotations.firstIndex(where: { $0.id == id }) else { return nil }
+            change(&document.annotations[index])
+            return document.annotations[index]
+        }
     }
 
     /// Removes the annotation. Its asset file, if any, stays in `assets/`: the user's
     /// own text may still point at it.
     public func remove(id: String, from entry: BookEntry) throws {
-        guard FileManager.default.fileExists(atPath: entry.notesURL.path) else { return }
-        var document = try document(for: entry)
+        _ = try mutate(entry) { document -> Bool? in
         let ordered = NotesDocument.readingOrder(document.annotations)
-        guard let position = ordered.firstIndex(where: { $0.id == id }) else { return }
+        guard let position = ordered.firstIndex(where: { $0.id == id }) else { return nil }
         // Text the user wrote under this annotation moves up to whatever now precedes it.
         if let orphan = document.interleaved.removeValue(forKey: id) {
             if let previous = ordered[..<position].last(where: { $0.id != id }) {
@@ -67,7 +103,8 @@ public struct NotesStore: Sendable {
             }
         }
         document.annotations.removeAll { $0.id == id }
-        try write(document, for: entry)
+        return true
+        }
     }
 
     /// Saves an image into the book's `assets/` folder under a unique, readable name and

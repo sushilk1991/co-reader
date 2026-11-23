@@ -123,3 +123,22 @@ So the notes writer knows what matters to the connector:
   ignored with a warning in Mastisk's log.
 - Atomic replace (write a temporary file, then rename) is what the connector
   expects. Temporary files should not be named `notes.md`.
+
+## Mastisk on another machine (what the app does today)
+
+Implemented in `MastiskLocator` (CoreaderKit) and `Integrations.mastiskState`.
+
+1. `GET http://127.0.0.1:5555/api/health`. If Mastisk is on this Mac the steps above apply,
+   and first-run onboarding switches the connector on without asking.
+2. Otherwise the address that answered last time, then every online computer in
+   `tailscale status --json`: `GET https://<name>:8443/api/health` and
+   `https://<name>/api/health`, in parallel, 3 second timeout. A host counts as Mastisk
+   only if the answer is `{"ok": true, "public_url": …}`.
+3. `GET <base>/api/coreader` on the one that answered. Only these two read-only requests
+   are sent; no book, note or path leaves the Mac.
+4. "Connected" is shown when the connector there is on and its `library_root` is the same
+   folder inside iCloud Drive as this library (compared below `com~apple~CloudDocs`,
+   ignoring case). iCloud carries the notes to that machine; Mastisk reads them there.
+
+The connector cannot be switched on from another machine: that takes
+`mastisk coreader connect` on the host, and the app says so.

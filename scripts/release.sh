@@ -22,7 +22,8 @@ APP="build/DerivedData/$LABEL/Build/Products/Release/Coreader.app"
 DMG="dist/Coreader-$VERSION.dmg"
 
 xcodegen generate --spec project.yml >/dev/null
-AGENT_NAME="$LABEL" make build CONFIGURATION=Release
+# Universal, so Intel Macs on macOS 15 can run it too.
+AGENT_NAME="$LABEL" make build CONFIGURATION=Release DESTINATION='generic/platform=macOS'
 
 # Inside out: the embedded command first, then the app. Hardened runtime and a secure
 # timestamp are what notarization requires; ad-hoc signing cannot be timestamped.

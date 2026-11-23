@@ -10,10 +10,13 @@ enum LibraryReadme {
 
     static var marker: String { "<!-- coreader-readme v\(version) -->" }
 
+    /// `existing` is nil when there is no README. A README without Coreader's marker is
+    /// someone else's file (the folder may have had another life) and is never replaced.
     static func needsWrite(existing: String?) -> Bool {
-        guard let first = existing?.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first,
+        guard let existing else { return true }
+        guard let first = existing.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first,
               first.hasPrefix("<!-- coreader-readme v"),
-              let found = Int(first.dropFirst("<!-- coreader-readme v".count).prefix { $0.isNumber }) else { return true }
+              let found = Int(first.dropFirst("<!-- coreader-readme v".count).prefix { $0.isNumber }) else { return false }
         return found < version
     }
 

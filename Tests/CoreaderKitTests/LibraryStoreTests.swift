@@ -107,7 +107,12 @@ import Testing
         let library = TestLibrary()
         try library.store.prepare()
 
+        // A README that is not Coreader's (the folder had another life) is never replaced.
         try Data("old text without a marker".utf8).write(to: library.store.readmeURL)
+        try library.store.prepare()
+        #expect(try String(contentsOf: library.store.readmeURL, encoding: .utf8) == "old text without a marker")
+
+        try Data("<!-- coreader-readme v0 -->\nolder".utf8).write(to: library.store.readmeURL)
         try library.store.prepare()
         #expect(try String(contentsOf: library.store.readmeURL, encoding: .utf8) == LibraryReadme.text)
 

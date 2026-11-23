@@ -13,11 +13,11 @@ enum Integrations {
     /// Runs a tool with a timeout and no shell. Output goes to a temporary file, not a
     /// pipe: a pipe stays open while any descendant of the tool holds it, and reading it
     /// to the end would then wait past the timeout.
-    static func run(_ executable: URL, _ arguments: [String], timeout: TimeInterval = 20) async -> CommandResult {
-        await Task.detached { runBlocking(executable, arguments, timeout: timeout) }.value
+    static func run(_ executable: URL, _ arguments: [String], timeout: TimeInterval = 20, environment: [String: String] = [:]) async -> CommandResult {
+        await Task.detached { runBlocking(executable, arguments, timeout: timeout, environment: environment) }.value
     }
 
-    private static func runBlocking(_ executable: URL, _ arguments: [String], timeout: TimeInterval) -> CommandResult {
+    private static func runBlocking(_ executable: URL, _ arguments: [String], timeout: TimeInterval, environment: [String: String]) -> CommandResult {
         do {
             let capture = FileManager.default.temporaryDirectory.appendingPathComponent("coreader-run-\(UUID().uuidString).txt")
             FileManager.default.createFile(atPath: capture.path, contents: nil)
@@ -26,6 +26,7 @@ enum Integrations {
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
+            if !environment.isEmpty { process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new } }
             process.standardOutput = output
             process.standardError = output
             process.standardInput = FileHandle.nullDevice
@@ -62,9 +63,17 @@ enum Integrations {
     /// Links `~/.local/bin/coreader` to the copy inside the app, so it updates with the app.
     static func installCLI() throws {
         guard let cli = bundledCLI else { throw Problem("This build does not include the command line tool.") }
+        // A link into a disk image or a quarantine copy breaks when it is ejected.
+        let location = Bundle.main.bundlePath
+        guard !location.hasPrefix("/Volumes/"), !location.contains("/AppTranslocation/") else {
+            throw Problem("Move Coreader to the Applications folder first, then install the command.")
+        }
         let fm = FileManager.default
         try fm.createDirectory(at: cliLink.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if (try? fm.destinationOfSymbolicLink(atPath: cliLink.path)) != nil { try fm.removeItem(at: cliLink) }
+        if let target = try? fm.destinationOfSymbolicLink(atPath: cliLink.path) {
+            guard target.hasSuffix("/Contents/Helpers/coreader") else { throw Problem("\(cliLink.path) is a link to something else. Remove it first.") }
+            try fm.removeItem(at: cliLink)
+        }
         guard !fm.fileExists(atPath: cliLink.path) else { throw Problem("\(cliLink.path) already exists and is not a link Coreader made.") }
         try fm.createSymbolicLink(at: cliLink, withDestinationURL: cli)
     }
@@ -122,12 +131,19 @@ enum Integrations {
     // MARK: Mastisk
 
     enum MastiskState: Equatable {
-        case notInstalled
-        /// Mastisk is here but lacks the Coreader connector.
-        case needsConnector
+        /// No Mastisk on this Mac or on the person's tailnet.
+        case notFound
+        /// Mastisk was found but lacks the Coreader connector. `host` is nil for this Mac.
+        case needsConnector(host: String?)
+        /// Mastisk on this Mac, connector off: Coreader can switch it on.
         case disconnected
-        case connected(books: Int)
-        case remote
+        /// Mastisk on this Mac indexes another folder than this library; connecting again fixes it.
+        case localOtherFolder
+        case connected(books: Int, host: String?)
+        /// Mastisk on another machine with the connector off: it has to be switched on there.
+        case remoteOff(host: String)
+        /// Mastisk on another machine reads a different folder, so it cannot see this library.
+        case remoteOtherFolder(host: String)
         case unknown(String)
     }
 
@@ -136,24 +152,89 @@ enum Integrations {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    static func mastiskState() async -> MastiskState {
-        guard let cli = mastiskCLI else { return .notInstalled }
-        if ProcessInfo.processInfo.environment["MASTISK_URL"] != nil { return .remote }
+    static var tailscaleCLI: URL? {
+        let candidates = ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale"]
+        return candidates.map { URL(fileURLWithPath: $0) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    /// Last Mastisk address that answered, so the next check does not need Tailscale.
+    private static let rememberedMastiskKey = "mastiskURL"
+
+    private static let mastiskSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 3
+        config.timeoutIntervalForResource = 5
+        config.httpCookieStorage = nil
+        return URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
+    }()
+
+    /// A probed host must answer itself; following a redirect would let it point the
+    /// app at an address that was never on the list.
+    private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+            completionHandler(nil)
+        }
+    }
+
+    /// `COREADER_MASTISK_LOCAL` points the "this Mac" check elsewhere, for off-screen runs.
+    private static let mastiskLocator = MastiskLocator(local: ProcessInfo.processInfo.environment["COREADER_MASTISK_LOCAL"].flatMap(URL.init(string:)) ?? MastiskLocator.localURL) { url in
+        guard let (data, response) = try? await mastiskSession.data(from: url), let http = response as? HTTPURLResponse else { return nil }
+        return (status: http.statusCode, body: data.prefix(100_000))
+    }
+
+    /// Looks on this Mac first, then on the tailnet. Read-only: nothing is switched on.
+    static func mastiskState(libraryRoot: URL) async -> MastiskState {
+        let defaults = UserDefaults.standard
+        let remembered = defaults.string(forKey: rememberedMastiskKey).flatMap(URL.init(string:))
+        var found = await mastiskLocator.locate(remembered: remembered, tailscaleStatus: nil)
+        if found == nil, let tailscale = tailscaleCLI {
+            // The app's own binary is both GUI and CLI; without this it can open the GUI.
+            let status = await run(tailscale, ["status", "--json"], timeout: 6, environment: ["TAILSCALE_BE_CLI": "1"])
+            if status.status == 0 { found = await mastiskLocator.locate(remembered: nil, tailscaleStatus: status.output.data(using: .utf8)) }
+        }
+        guard let found else {
+            defaults.removeObject(forKey: rememberedMastiskKey)
+            // Installed here but not running: the command still knows the connector's state.
+            return mastiskCLI == nil ? .notFound : await mastiskStateFromCLI()
+        }
+        if found.isLocal {
+            guard let connector = found.connector else { return .needsConnector(host: nil) }
+            guard connector.enabled else { return .disconnected }
+            return MastiskLocator.sameFolder(connector.libraryRoot, libraryRoot.path) ? .connected(books: connector.books, host: nil) : .localOtherFolder
+        }
+        defaults.set(found.baseURL.absoluteString, forKey: rememberedMastiskKey)
+        let host = found.baseURL.host?.components(separatedBy: ".").first ?? "another machine"
+        guard let connector = found.connector else { return .needsConnector(host: host) }
+        guard connector.enabled else { return .remoteOff(host: host) }
+        guard MastiskLocator.sharesLibrary(local: libraryRoot.path, remote: connector.libraryRoot) else { return .remoteOtherFolder(host: host) }
+        return .connected(books: connector.books, host: host)
+    }
+
+    private static func mastiskStateFromCLI() async -> MastiskState {
+        guard let cli = mastiskCLI else { return .notFound }
         let result = await run(cli, ["coreader", "status", "--json"], timeout: 15)
-        if result.status == 2 || result.output.contains("No such command") || result.output.contains("invalid choice") { return .needsConnector }
+        if result.status == 2 || result.output.contains("No such command") { return .needsConnector(host: nil) }
         guard result.status == 0, let data = result.output.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return result.status == 0 ? .unknown("Unexpected answer from Mastisk.") : .needsConnector
+            return .unknown("Mastisk is installed but did not answer.")
         }
-        if json["enabled"] as? Bool == true { return .connected(books: json["books"] as? Int ?? 0) }
+        if json["enabled"] as? Bool == true { return .connected(books: json["books"] as? Int ?? 0, host: nil) }
         return .disconnected
     }
 
-    static func connectMastisk(_ connect: Bool) async -> MastiskState {
-        guard let cli = mastiskCLI else { return .notInstalled }
+    /// Switches the connector on this Mac's Mastisk on or off, through its own command.
+    static func connectMastisk(_ connect: Bool, libraryRoot: URL) async -> MastiskState {
+        guard let cli = mastiskCLI else { return .unknown("The mastisk command was not found on this Mac.") }
         let result = await run(cli, ["coreader", connect ? "connect" : "disconnect", "--json"], timeout: 30)
-        if result.status != 0 { return .unknown(result.output.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200).description) }
-        return await mastiskState()
+        let state = await mastiskState(libraryRoot: libraryRoot)
+        if result.status != 0 {
+            // A slow first scan can outlast the timeout after the setting was already
+            // written, so what Mastisk now says wins over the command's exit code.
+            let settled = connect ? { if case .connected = state { return true } else { return false } }() : state == .disconnected
+            if !settled { return .unknown(result.output.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200).description) }
+        }
+        return state
     }
 
     struct Problem: LocalizedError {

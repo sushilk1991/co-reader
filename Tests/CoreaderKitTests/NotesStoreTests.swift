@@ -22,6 +22,32 @@ private func note(
         #expect(!FileManager.default.fileExists(atPath: entry.notesURL.path), "reading or removing never creates the file")
     }
 
+    @Test func anICloudPlaceholderIsNotTreatedAsNoNotes() throws {
+        let entry = try library.add("Evicted")
+        FileManager.default.createFile(atPath: entry.folder.appendingPathComponent(".notes.md.icloud").path, contents: Data())
+        #expect(throws: NotesStore.NotesNotDownloaded.self) { try notes.load(entry) }
+        #expect(throws: NotesStore.NotesNotDownloaded.self) { try notes.upsert(note("new000000000", at: 0.2, quote: "New"), in: entry) }
+        #expect(!FileManager.default.fileExists(atPath: entry.notesURL.path), "no fresh file is written over the one in iCloud")
+    }
+
+    @Test func aFileReplacedDuringAnEditIsNotOverwrittenWithTheOlderCopy() throws {
+        let entry = try library.add("Raced")
+        try notes.upsert(note("first0000000", at: 0.1, quote: "First"), in: entry)
+        var calls = 0
+        try notes.update(id: "first0000000", in: entry) { annotation in
+            calls += 1
+            if calls == 1 {
+                // Another app adds a highlight after our read and before our write.
+                try? NotesStore().upsert(note("other0000000", at: 0.6, quote: "From elsewhere"), in: entry)
+            }
+            annotation.note = "mine"
+        }
+        let loaded = try notes.load(entry)
+        #expect(calls == 2)
+        #expect(loaded.map(\.id) == ["first0000000", "other0000000"])
+        #expect(loaded[0].note == "mine")
+    }
+
     @Test func upsertInsertsUpdatesAndKeepsReadingOrder() throws {
         let entry = try library.add("Ordered", authors: ["A. Writer"])
         try notes.upsert(note("late00000000", at: 0.8, quote: "Late"), in: entry)

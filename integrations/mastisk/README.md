@@ -4,8 +4,8 @@ Makes Coreader's reading notes show up in Mastisk's search and Ask, with one
 copy of every Markdown file. Coreader works the same with or without it.
 
 Mastisk has no plugin mechanism, so the connector is a small patch to Mastisk
-itself: [`mastisk.patch`](mastisk.patch) (one commit on top of Mastisk
-`a784800`). Nothing in this folder touches a running Mastisk until that patch
+itself: [`mastisk.patch`](mastisk.patch) (two commits on top of Mastisk
+`a784800`; both are in Mastisk `main` since `93655da`). Nothing in this folder touches a running Mastisk until that patch
 is installed by its owner.
 
 ## What it does
@@ -154,14 +154,15 @@ mastisk coreader disconnect
 - **Agents do not write articles from reading notes.** The Compiler and
   Synthesizer are not fed these files; that would create derived copies and
   is left out on purpose.
-- **Files iCloud has evicted.** A background process cannot always download
-  an evicted iCloud file (the read fails with EDEADLK). The scan then keeps
-  the last index for that book and Ask answers from the index. Keeping the
-  Coreader folder downloaded on the Mac that runs Mastisk avoids this.
+- **Files iCloud has evicted.** A daemon that reads an evicted iCloud file gets an
+  error at once instead of the download. The scan therefore asks iCloud for the file
+  (`brctl download`) and retries for a few seconds; if it still is not there, the last
+  index is kept and the next scan tries again. Checked on a real evicted `notes.md`.
 - **The Mac that runs Mastisk must see the library.** With the default
-  iCloud Drive location that means the same Apple ID on that Mac. With
-  `MASTISK_URL` set (Mastisk on another machine) the `mastisk coreader`
-  commands refuse to run; run them on the host.
+  iCloud Drive location that means the same Apple ID on that Mac. Coreader on
+  another Mac finds that Mastisk over Tailscale (see [CONNECT.md](CONNECT.md))
+  and reports it as connected when both use the same iCloud Drive folder. The
+  `mastisk coreader` commands themselves run only on the host.
 - **Images** in notes (`assets/…`) are not indexed; the Markdown reference is
   passed through as text.
 - `last_scan` in the status is kept in memory, so it is `null` after a

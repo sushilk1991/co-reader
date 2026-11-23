@@ -96,6 +96,15 @@ final class AppModel {
             show("Could not open the library: \(error.localizedDescription)", isError: true)
         }
         isLoaded = true
+        // Books whose metadata iCloud has not downloaded yet appear once it arrives.
+        if ((try? await offMain { library.requestEvictedMetadata() }) ?? 0) > 0 {
+            Task {
+                for delay in [3, 10, 30] {
+                    try? await Task.sleep(for: .seconds(delay))
+                    await reloadBooks()
+                }
+            }
+        }
         review.reload(app: self)
         let links = pendingLinks
         pendingLinks = []
@@ -121,10 +130,19 @@ final class AppModel {
     /// Moves the library to another folder (onboarding and Settings). Existing books are
     /// not moved; the new folder is opened as it is.
     func useLibrary(at root: URL) async {
-        var config = LibraryConfig.load()
-        config.libraryRoot = root
-        try? config.save()
-        library = LibraryStore(root: root)
+        // Prove the folder works before remembering it: a saved root that cannot be
+        // prepared would greet every later launch with an error.
+        let candidate = LibraryStore(root: root)
+        do {
+            try await offMain { try candidate.prepare() }
+            var config = LibraryConfig.load()
+            config.libraryRoot = root
+            try config.save()
+        } catch {
+            show("That folder cannot be used as the library: \(error.localizedDescription)", isError: true)
+            return
+        }
+        library = candidate
         review.libraryRoot = root
         await start()
     }
